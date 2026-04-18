@@ -3,12 +3,13 @@ import { useAuthStore } from '@/src/store/useAuthStore';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Swords, Zap, Timer, Users, Shield, Flame, Bell } from 'lucide-react';
+import { Trophy, Swords, Zap, Timer, Users, Shield, Flame, Bell, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import socket from '@/src/lib/socket';
 import Lobby from '../arena/Lobby';
 import BattleRoom from '../arena/BattleRoom';
 import { toast } from 'sonner';
+import { generatePredictionInsight } from '@/src/services/geminiService';
 
 export default function ArenaDashboard() {
   const { user } = useAuthStore();
@@ -32,7 +33,7 @@ export default function ArenaDashboard() {
             <div>
               <h3 className="font-black text-white text-lg italic uppercase">Battle Request!</h3>
               <p className="text-slate-400 text-sm font-bold">
-                <span className="text-white">{data.fromUser.name}</span> challenged you to a duel!
+                <span className="text-white">{data.fromUser.name}</span> challenged you on <span className="text-arena-neon">{data.battleSource || 'General Questions'}</span>!
               </p>
             </div>
           </div>
@@ -77,10 +78,11 @@ export default function ArenaDashboard() {
   const handleChallenge = (targetUser: any) => {
     socket.emit("challenge_user", { 
       targetUserId: targetUser.id, 
-      fromUser: { id: user?.id, name: user?.name, school: user?.school_id, level: user?.level } 
+      fromUser: { id: user?.id, name: user?.name, school: user?.school_id, level: user?.level },
+      battleSource: targetUser.battleSource
     });
     toast.success("Challenge Sent!", {
-      description: `Waiting for ${targetUser.name} to accept...`,
+      description: `Target: ${targetUser.name} | Source: ${targetUser.battleSource}`,
     });
   };
 
@@ -88,14 +90,50 @@ export default function ArenaDashboard() {
     socket.emit("accept_challenge", { 
       battleId: challenge.battleId, 
       player1: challenge.fromUser,
-      player2: { id: user?.id, name: user?.name, school: user?.school_id, level: user?.level }
+      player2: { id: user?.id, name: user?.name, school: user?.school_id, level: user?.level },
+      battleSource: challenge.battleSource
     });
     setIncomingChallenge(null);
   };
 
-  const handleBattleComplete = (results: any) => {
+  const handleBattleComplete = async (results: any) => {
     setActiveBattle(null);
     setView('lobby');
+    
+    // AI Win/Loss Insights
+    if (results.winnerId !== user?.id) {
+      toast.info("AI Analysis", {
+        description: "The Exam Oracle is analyzing your defeat... Breakdown coming soon.",
+      });
+      try {
+        const insight = await generatePredictionInsight('Combat Subject', [results]);
+        if (insight) {
+          toast.success("AI Insight Ready", {
+            description: insight.correction_breakdown.slice(0, 100) + "...",
+          });
+        }
+      } catch (e) {
+        console.error("AI Insight failed", e);
+      }
+    }
+  };
+
+  const handleAIChallenge = () => {
+    toast.promise(
+      new Promise((resolve) => {
+        setTimeout(() => {
+          socket.emit("challenge_ai", { 
+            fromUser: { id: user?.id, name: user?.name, school: user?.school_id, level: user?.level } 
+          });
+          resolve(true);
+        }, 1500);
+      }),
+      {
+        loading: 'Finding the AI Final Boss...',
+        success: 'The Final Boss has accepted! Prepare yourself.',
+        error: 'The AI is currently calculating too many multiverses. Try again later.',
+      }
+    );
   };
 
   return (
@@ -111,6 +149,14 @@ export default function ArenaDashboard() {
               <h1 className="text-5xl font-black italic tracking-tighter text-white uppercase">
                 Battle <span className="arena-text-neon">Arena</span>
               </h1>
+              {user?.level >= 5 && (
+                <Button 
+                  onClick={handleAIChallenge}
+                  className="ml-4 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white font-black rounded-2xl gap-2 animate-bounce hover:animate-none px-6 py-6 shadow-xl shadow-red-500/20 shadow-lg"
+                >
+                  <Sparkles className="w-5 h-5" /> AI FINAL BOSS
+                </Button>
+              )}
             </div>
             <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-sm">
               High-Stakes Academic Combat

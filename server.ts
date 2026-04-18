@@ -94,6 +94,59 @@ const initialDb = {
   },
   battleRooms: [],
   leaderboardHistory: [],
+  pastQuestions: [
+    {
+      id: "pq1",
+      exam: "JAMB",
+      year: 1998,
+      subject: "Biology",
+      topic: "Photosynthesis",
+      question_text: "Which of the following is the primary site of photosynthesis in a leaf?",
+      options: ["Stoma", "Mesophyll", "Epidermis", "Vascular bundle"],
+      correct_answer: "Mesophyll",
+      explanation: "Photosynthesis primarily takes place in the mesophyll layer of cells in the leaf, which contains numerous chloroplasts.",
+      difficulty: "Medium",
+      syllabus_link: "https://eduarena.com/syllabus/jamb/biology/2.1"
+    },
+    {
+      id: "pq2",
+      exam: "WAEC",
+      year: 2015,
+      subject: "Mathematics",
+      topic: "Calculus",
+      question_text: "Find the derivative of $y = 3x^2 + 5x - 7$ with respect to $x$.",
+      options: ["$6x + 5$", "$3x + 5$", "$6x - 7$", "$x^2 + 5$"],
+      correct_answer: "$6x + 5$",
+      explanation: "Using the power rule: $\\frac{d}{dx}(ax^n) = anx^{n-1}$. So, $\\frac{dy}{dx} = 2(3)x^{2-1} + 1(5)x^{1-1} + 0 = 6x + 5$.",
+      difficulty: "Hard",
+      syllabus_link: "https://eduarena.com/syllabus/waec/math/4.3"
+    },
+    {
+      id: "pq3",
+      exam: "NECO",
+      year: 1983,
+      subject: "Physics",
+      topic: "Mechanics",
+      question_text: "A car traveling at 20 m/s accelerates at 2 m/s² for 5 seconds. Find the final velocity.",
+      options: ["25 m/s", "30 m/s", "35 m/s", "40 m/s"],
+      correct_answer: "30 m/s",
+      explanation: "Using $v = u + at$: $v = 20 + (2 \\times 5) = 20 + 10 = 30$ m/s.",
+      difficulty: "Medium",
+      syllabus_link: "https://eduarena.com/syllabus/neco/physics/1.1"
+    }
+  ],
+  syllabus: [
+    { exam: "JAMB", subject: "Biology", topic: "Photosynthesis", description: "Structure and functions of chloroplasts, light and dark reactions." },
+    { exam: "WAEC", subject: "Mathematics", topic: "Calculus", description: "Differentiation from first principles, differentiation of polynomials." }
+  ],
+  predictions: [
+    { exam: "JAMB", subject: "Biology", year: 2025, predicted_topics: ["Photosynthesis", "Genetics", "Ecology"], confidence: 0.85 },
+    { exam: "WAEC", subject: "Mathematics", year: 2025, predicted_topics: ["Calculus", "Probability", "Geometry"], confidence: 0.92 }
+  ],
+  syllabus_mapping: [
+    { exam: "JAMB", subject: "Biology", topic: "Cell Biology", syllabus_id: "BIO-1.1" },
+    { exam: "JAMB", subject: "Biology", topic: "Photosynthesis", syllabus_id: "BIO-2.1" }
+  ],
   textbooks: [
     { id: "tb1", title: "New General Mathematics for SS1", subject: "Mathematics", category: "Science", author: "M.F. Macrae" },
     { id: "tb2", title: "Essential Chemistry", subject: "Chemistry", category: "Science", author: "O.A. Osei" }
@@ -543,6 +596,61 @@ async function startServer() {
     res.json({ success: true, message: "Solution requested successfully. Our experts will notify you soon!" });
   });
 
+  // --- Exam Oracle & AI Mastery Routes ---
+  app.get("/api/oracle/search", (req, res) => {
+    const { exam, year, subject, topic, difficulty, page = "1", limit = "20" } = req.query;
+    const db = getDb();
+    let filtered = db.pastQuestions;
+
+    if (exam) filtered = filtered.filter((q: any) => q.exam === exam);
+    if (year) filtered = filtered.filter((q: any) => q.year === Number(year));
+    if (subject) filtered = filtered.filter((q: any) => q.subject === subject);
+    if (topic) filtered = filtered.filter((q: any) => q.topic?.toLowerCase().includes(String(topic).toLowerCase()));
+    if (difficulty) filtered = filtered.filter((q: any) => q.difficulty === difficulty);
+
+    const p = Number(page);
+    const l = Number(limit);
+    const paginated = filtered.slice((p - 1) * l, p * l);
+
+    res.json({
+      total: filtered.length,
+      page: p,
+      limit: l,
+      questions: paginated
+    });
+  });
+
+  app.get("/api/oracle/years", (req, res) => {
+    const years = [];
+    for (let i = 2025; i >= 1983; i--) years.push(i);
+    res.json(years);
+  });
+
+  app.get("/api/oracle/topics", (req, res) => {
+    const { subject } = req.query;
+    const db = getDb();
+    const topics = Array.from(new Set(db.pastQuestions.filter((q: any) => !subject || q.subject === subject).map((q: any) => q.topic)));
+    res.json(topics);
+  });
+
+  app.get("/api/oracle/predictions", (req, res) => {
+    const { exam, subject } = req.query;
+    const db = getDb();
+    let filtered = db.predictions;
+    if (exam) filtered = filtered.filter((p: any) => p.exam === exam);
+    if (subject) filtered = filtered.filter((p: any) => p.subject === subject);
+    res.json(filtered);
+  });
+
+  app.get("/api/mastery/syllabus", (req, res) => {
+    const { exam, subject } = req.query;
+    const db = getDb();
+    let filtered = db.syllabus;
+    if (exam) filtered = filtered.filter((s: any) => s.exam === exam);
+    if (subject) filtered = filtered.filter((s: any) => s.subject === subject);
+    res.json(filtered);
+  });
+
   // --- Arena API Routes ---
   app.get("/api/arena/lobby", (req, res) => {
     const db = getDb();
@@ -590,20 +698,100 @@ async function startServer() {
       io.emit("lobby_update"); // Notify everyone to refresh lobby
     });
 
-    socket.on("challenge_user", ({ targetUserId, fromUser }) => {
+    socket.on("challenge_user", ({ targetUserId, fromUser, battleSource }) => {
       const targetSocketId = userSocketMap.get(targetUserId);
       if (targetSocketId) {
         io.to(targetSocketId).emit("battle_invite", { 
           fromUser, 
           battleId: Math.random().toString(36).substr(2, 9),
-          subject: "Mathematics" // Default for now
+          battleSource: battleSource || "General" 
         });
       }
     });
 
-    socket.on("accept_challenge", ({ battleId, player1, player2 }) => {
+    socket.on("challenge_ai", ({ fromUser }) => {
       const db = getDb();
-      const questions = db.questions.sort(() => 0.5 - Math.random()).slice(0, 10);
+      // Select 10 "Hard" questions from pastQuestions for the Boss Battle
+      const hardQuestions = db.pastQuestions
+        .filter((q: any) => q.difficulty === 'Hard')
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 10);
+
+      const battleId = `battle_ai_${Date.now()}`;
+      const aiPlayer = { id: "ai_boss", name: "AI Final Boss", school: "The Nexus", level: 99, score: 0, socketId: "ai_socket" };
+      
+      const battleRoom = {
+        id: battleId,
+        type: 'ai_boss',
+        status: 'active',
+        players: [
+          { ...fromUser, score: 0, socketId: socket.id },
+          aiPlayer
+        ],
+        questions: hardQuestions.map((q: any) => ({ 
+          id: q.id, 
+          question: q.question_text, 
+          options: q.options,
+          topic: q.topic,
+          year: q.year
+        })),
+        fullQuestions: hardQuestions,
+        currentQuestionIndex: 0,
+        startTime: Date.now(),
+        questionStartTime: Date.now(),
+        answers: [] 
+      };
+
+      activeBattles.set(battleId, battleRoom);
+      socket.join(battleId);
+      
+      io.to(battleId).emit("battle_started", {
+        id: battleId,
+        players: [fromUser, { id: "ai_boss", name: "AI Final Boss", school: "The Nexus", level: 99 }],
+        questions: battleRoom.questions
+      });
+
+      // AI Logic: Answers every 5 seconds
+      let qIndex = 0;
+      const aiInterval = setInterval(() => {
+        const room = activeBattles.get(battleId);
+        if (!room || room.status !== 'active' || qIndex >= 10) {
+          clearInterval(aiInterval);
+          return;
+        }
+
+        const isCorrect = Math.random() < 0.92; // 92% accuracy
+        const points = isCorrect ? 100 : 0;
+        const player = room.players.find((p: any) => p.id === "ai_boss");
+        if (player) player.score += points;
+        
+        room.answers.push({ questionIndex: qIndex, userId: "ai_boss", timestamp: Date.now(), isCorrect, points });
+
+        io.to(battleId).emit("battle_update", {
+          players: room.players,
+          lastAnswer: { userId: "ai_boss", isCorrect, points, questionIndex: qIndex }
+        });
+
+        qIndex++;
+      }, 5500);
+    });
+
+    socket.on("accept_challenge", ({ battleId, player1, player2, battleSource }) => {
+      const db = getDb();
+      let questions = [];
+
+      if (battleSource) {
+        const [exam, year] = battleSource.split(" ");
+        questions = db.pastQuestions
+          .filter((q: any) => q.exam === exam && q.year === Number(year))
+          .sort(() => 0.5 - Math.random())
+          .slice(0, 10);
+      }
+
+      // Fallback if source has no questions
+      if (questions.length < 5) {
+        questions = [...questions, ...db.questions.sort(() => 0.5 - Math.random()).slice(0, 10 - questions.length)];
+      }
       
       const battleRoom = {
         id: battleId,
@@ -613,12 +801,18 @@ async function startServer() {
           { ...player1, score: 0, socketId: userSocketMap.get(player1.id) },
           { ...player2, score: 0, socketId: socket.id }
         ],
-        questions: questions.map((q: any) => ({ ...q, correct_answer: undefined })),
+        questions: questions.map((q: any) => ({ 
+          id: q.id, 
+          question: q.question_text || q.text, 
+          options: q.options,
+          topic: q.topic,
+          year: q.year
+        })),
         fullQuestions: questions,
         currentQuestionIndex: 0,
         startTime: Date.now(),
         questionStartTime: Date.now(),
-        answers: [] // { questionIndex, playerId, timestamp, isCorrect }
+        answers: [] 
       };
 
       activeBattles.set(battleId, battleRoom);

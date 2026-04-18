@@ -15,6 +15,7 @@ interface User {
   rank?: string;
   wins?: number;
   losses?: number;
+  battleSource?: string;
 }
 
 interface LobbyProps {
@@ -26,6 +27,15 @@ interface LobbyProps {
 export default function Lobby({ onChallenge, currentUser, socket }: LobbyProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState("");
+  const [selectedExam, setSelectedExam] = useState("JAMB");
+  const [selectedYear, setSelectedYear] = useState("2024");
+  const [years, setYears] = useState<number[]>([]);
+
+  useEffect(() => {
+    fetch('/api/oracle/years')
+      .then(res => res.json())
+      .then(setYears);
+  }, []);
 
   const fetchLobby = () => {
     fetch('/api/arena/lobby')
@@ -50,25 +60,35 @@ export default function Lobby({ onChallenge, currentUser, socket }: LobbyProps) 
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
-        <div className="relative w-full md:w-96">
+      <div className="flex flex-col md:flex-row gap-6 items-center justify-between bg-white/5 p-6 rounded-[32px] border border-white/10">
+        <div className="space-y-4 w-full md:w-auto">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Battle Source</label>
+          <div className="flex flex-wrap gap-4">
+            <select 
+              value={selectedExam}
+              onChange={(e) => setSelectedExam(e.target.value)}
+              className="bg-white/10 border-white/20 text-white rounded-xl px-4 py-2 font-black text-sm outline-none focus:ring-2 focus:ring-arena-primary min-w-[120px]"
+            >
+              {['JAMB', 'WAEC', 'NECO'].map(ex => <option key={ex} value={ex} className="bg-slate-900">{ex}</option>)}
+            </select>
+            <select 
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="bg-white/10 border-white/20 text-white rounded-xl px-4 py-2 font-black text-sm outline-none focus:ring-2 focus:ring-arena-primary min-w-[120px]"
+            >
+              {years.map(y => <option key={y} value={y} className="bg-slate-900">{y}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="relative w-full md:w-80">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5" />
           <Input 
-            placeholder="Search rivals or schools..." 
-            className="pl-12 py-6 bg-white/5 border-white/10 text-white rounded-2xl focus:ring-arena-primary"
+            placeholder="Search rivals..." 
+            className="pl-12 py-6 bg-white/10 border-white/10 text-white rounded-2xl focus:ring-arena-primary"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </div>
-        <div className="flex gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 bg-arena-primary/20 rounded-xl border border-arena-primary/30">
-            <Users className="text-arena-primary w-4 h-4" />
-            <span className="text-xs font-black text-white">{users.length} ONLINE</span>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-arena-secondary/20 rounded-xl border border-arena-secondary/30">
-            <Trophy className="text-arena-secondary w-4 h-4" />
-            <span className="text-xs font-black text-white">RANK #42</span>
-          </div>
         </div>
       </div>
 
@@ -108,7 +128,7 @@ export default function Lobby({ onChallenge, currentUser, socket }: LobbyProps) 
               </div>
 
               <Button 
-                onClick={() => onChallenge(user)}
+                onClick={() => onChallenge({ ...user, battleSource: `${selectedExam} ${selectedYear}` })}
                 className="w-full py-6 bg-arena-primary hover:bg-arena-primary/80 text-white font-black rounded-xl gap-2 group-hover:arena-glow transition-all"
               >
                 <Swords className="w-5 h-5" /> CHALLENGE

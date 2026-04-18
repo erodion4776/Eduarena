@@ -8,6 +8,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
+
 interface Player {
   id: string;
   name: string;
@@ -369,8 +374,15 @@ export default function BattleRoom({ battleId, players, questions, socket, onCom
             <Badge className="bg-arena-primary/20 text-arena-primary border-none font-black px-4 py-1">
               QUESTION {currentQuestionIndex + 1} OF 10
             </Badge>
+            {currentQuestion.year && (
+              <Badge className="ml-2 bg-arena-secondary/20 text-arena-secondary border-none font-black px-4 py-1">
+                {currentQuestion.year}
+              </Badge>
+            )}
             <h2 className="text-3xl font-black text-white leading-tight">
-              {currentQuestion.question_text}
+              <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                {currentQuestion.question || currentQuestion.question_text || currentQuestion.text}
+              </ReactMarkdown>
             </h2>
           </div>
 

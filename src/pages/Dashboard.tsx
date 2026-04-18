@@ -6,6 +6,7 @@ import StudyDashboard from '@/src/components/modes/StudyDashboard';
 import ArenaDashboard from '@/src/components/modes/ArenaDashboard';
 import KnowledgeHub from '@/src/components/hub/KnowledgeHub';
 import SolutionsEngine from '@/src/components/solutions/SolutionsEngine';
+import ExamOracle from '@/src/components/oracle/ExamOracle';
 import VideoLearning from '@/src/components/hub/VideoLearning';
 import QuestionDetail from '@/src/components/hub/QuestionDetail';
 import PracticeMode from '@/src/components/hub/PracticeMode';
@@ -13,9 +14,9 @@ import ScholarLounge from '@/src/components/social/ScholarLounge';
 import Inventory from '@/src/components/profile/Inventory';
 import JackpotWidget from '@/src/components/economy/JackpotWidget';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LayoutDashboard, BookOpen, Trophy, Swords, MessageSquare, Ghost } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Trophy, Swords, MessageSquare, Ghost, Sparkles } from 'lucide-react';
 
-type View = 'dashboard' | 'hub' | 'solutions' | 'learning' | 'question' | 'practice' | 'lounge' | 'inventory' | 'arena';
+type View = 'dashboard' | 'hub' | 'solutions' | 'oracle' | 'learning' | 'question' | 'practice' | 'lounge' | 'inventory' | 'arena';
 
 export default function Dashboard() {
   const { mode, setMode } = useThemeStore();
@@ -55,6 +56,8 @@ export default function Dashboard() {
         return <StudyDashboard />;
       case 'arena':
         return <ArenaDashboard />;
+      case 'oracle':
+        return <ExamOracle />;
       case 'solutions':
         return <SolutionsEngine initialSolutionId={initialSolutionId} />;
       case 'hub':
@@ -127,6 +130,12 @@ export default function Dashboard() {
                 className={`rounded-lg gap-2 font-bold ${mode === 'arena' ? 'data-[state=active]:bg-arena-primary data-[state=active]:text-white text-slate-400 hover:text-white' : 'data-[state=active]:bg-white data-[state=active]:shadow-sm'}`}
               >
                 <BookOpen className="w-4 h-4" /> Solutions
+              </TabsTrigger>
+              <TabsTrigger 
+                value="oracle" 
+                className={`rounded-lg gap-2 font-bold ${mode === 'arena' ? 'data-[state=active]:bg-arena-primary data-[state=active]:text-white text-slate-400 hover:text-white' : 'data-[state=active]:bg-white data-[state=active]:shadow-sm'}`}
+              >
+                <Sparkles className="w-4 h-4" /> Exam Oracle
               </TabsTrigger>
               <TabsTrigger 
                 value="arena" 
