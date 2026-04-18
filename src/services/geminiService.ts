@@ -1,8 +1,23 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let aiInstance: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'undefined') {
+      console.warn('GEMINI_API_KEY is not defined. AI features will be disabled.');
+      return null;
+    }
+    aiInstance = new GoogleGenAI(apiKey);
+  }
+  return aiInstance;
+}
 
 export async function generateTutorial(topic: string, subject: string, pastQuestions: any[]) {
+  const ai = getAI();
+  if (!ai) return "AI services are currently unavailable. Please check your configuration.";
+  
   const prompt = `
     You are an expert academic tutor for JAMB/WAEC/NECO exams.
     Topic: ${topic}
@@ -31,6 +46,9 @@ export async function generateTutorial(topic: string, subject: string, pastQuest
 }
 
 export async function generateMockQuestions(topic: string, subject: string, count: number = 5) {
+  const ai = getAI();
+  if (!ai) return [];
+  
   const prompt = `
     Generate ${count} highly realistic mock exam questions for the topic: ${topic} in ${subject}.
     Include a mix of actual past-paper-style logic and "predicted" questions for the 2025 exams.
@@ -80,6 +98,9 @@ export async function generateMockQuestions(topic: string, subject: string, coun
 }
 
 export async function generatePredictionInsight(subject: string, results: any[]) {
+  const ai = getAI();
+  if (!ai) return null;
+  
   const prompt = `
     Based on the following student performance results: ${JSON.stringify(results)}
     And historical data for ${subject} exams (JAMB/WAEC/NECO).

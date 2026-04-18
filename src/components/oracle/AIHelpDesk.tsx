@@ -11,7 +11,19 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let aiInstance: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'undefined') {
+      console.warn('GEMINI_API_KEY is not defined. AI Help Desk will be offline.');
+      return null;
+    }
+    aiInstance = new GoogleGenAI(apiKey);
+  }
+  return aiInstance;
+}
 
 export default function AIHelpDesk({ contextQuestion }: { contextQuestion?: any }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -21,6 +33,12 @@ export default function AIHelpDesk({ contextQuestion }: { contextQuestion?: any 
 
   const handleSend = async () => {
     if (!prompt.trim()) return;
+    
+    const ai = getAI();
+    if (!ai) {
+      setMessages(prev => [...prev, { role: 'ai', text: "The Oracle is currently disconnected from the grid. Check your configuration!" }]);
+      return;
+    }
 
     const userMessage = prompt;
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
