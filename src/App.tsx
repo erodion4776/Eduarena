@@ -4,9 +4,11 @@
  */
 
 import { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import Login from '@/src/pages/Login';
 import Dashboard from '@/src/pages/Dashboard';
+import AdminPage from '@/src/pages/Admin';
 import { Toaster } from '@/components/ui/sonner';
 
 export default function App() {
@@ -43,10 +45,15 @@ export default function App() {
   }
 
   return (
-    <>
-      {user ? <Dashboard /> : <Login />}
+    <Router>
+      <Routes>
+        <Route path="/" element={user ? <Dashboard /> : <Navigate to="/login" />} />
+        <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
       <Toaster />
-    </>
+    </Router>
   );
 }
 

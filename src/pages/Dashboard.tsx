@@ -17,11 +17,14 @@ import QuestionFactory from '@/src/components/admin/QuestionFactory';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LayoutDashboard, BookOpen, Trophy, Swords, MessageSquare, Ghost, Sparkles, Database } from 'lucide-react';
 
+import { useNavigate, Link } from 'react-router-dom';
+
 type View = 'dashboard' | 'hub' | 'solutions' | 'oracle' | 'learning' | 'question' | 'practice' | 'lounge' | 'inventory' | 'arena' | 'admin';
 
 export default function Dashboard() {
   const { user } = useAuthStore();
   const { mode, setMode } = useThemeStore();
+  const navigate = useNavigate();
   const [view, setView] = useState<View>('dashboard');
   const [selectedCourse, setSelectedCourse] = useState<any>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<any>(null);
@@ -110,8 +113,6 @@ export default function Dashboard() {
         return <ScholarLounge />;
       case 'inventory':
         return <Inventory />;
-      case 'admin':
-        return user?.role === 'admin' ? <QuestionFactory /> : <StudyDashboard />;
       default:
         return <StudyDashboard />;
     }
@@ -159,6 +160,7 @@ export default function Dashboard() {
               {user?.role === 'admin' && (
                 <TabsTrigger 
                   value="admin" 
+                  onClick={() => navigate('/admin')}
                   className={`rounded-lg gap-2 font-bold ${mode === 'arena' ? 'data-[state=active]:bg-arena-primary data-[state=active]:text-white text-slate-400 hover:text-white' : 'data-[state=active]:bg-white data-[state=active]:shadow-sm'}`}
                 >
                   <Database className="w-4 h-4" /> Question Factory
