@@ -9,7 +9,7 @@ function getAI() {
       console.warn('GEMINI_API_KEY is not defined. AI features will be disabled.');
       return null;
     }
-    aiInstance = new GoogleGenAI(apiKey);
+    aiInstance = new GoogleGenAI({ apiKey });
   }
   return aiInstance;
 }

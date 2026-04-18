@@ -58,7 +58,8 @@ export default function ExamOracle() {
   
   // Data State
   const [questions, setQuestions] = useState<any[]>([]);
-  const [topics, setTopics] = useState<string[]>([]);
+  const [topics, setTopics] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
   const [years, setYears] = useState<number[]>([]);
   
   // AI Mastery State
@@ -67,22 +68,36 @@ export default function ExamOracle() {
   const [activeQuestion, setActiveQuestion] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/oracle/years')
-      .then(res => res.json())
-      .then(setYears);
+    Promise.all([
+      fetch('/api/oracle/years').then(res => res.json()),
+      fetch('/api/admin/subjects').then(res => res.json())
+    ]).then(([yearData, subjectData]) => {
+      setYears(yearData);
+      setSubjects(subjectData);
+    });
   }, []);
 
   useEffect(() => {
-    fetch(`/api/oracle/topics?subject=${selectedSubject}`)
-      .then(res => res.json())
-      .then(setTopics);
-  }, [selectedSubject]);
+    if (selectedSubject) {
+      // Find the ID of the selected subject
+      const sub = subjects.find(s => s.name === selectedSubject);
+      if (sub) {
+        fetch(`/api/oracle/topics?subject_id=${sub.id}`)
+          .then(res => res.json())
+          .then(setTopics);
+      }
+    }
+  }, [selectedSubject, subjects]);
 
   const handleSearchArchive = () => {
-    let url = `/api/oracle/search?subject=${selectedSubject}`;
+    const sub = subjects.find(s => s.name === selectedSubject);
+    let url = `/api/oracle/search?subject_id=${sub?.id || ''}`;
     if (selectedExamBody) url += `&exam=${selectedExamBody}`;
     if (selectedYear) url += `&year=${selectedYear}`;
-    if (selectedTopic) url += `&topic=${selectedTopic}`;
+    if (selectedTopic) {
+        const top = topics.find(t => t.name === selectedTopic);
+        if (top) url += `&topic_id=${top.id}`;
+    }
     
     fetch(url)
       .then(res => res.json())
@@ -207,14 +222,14 @@ export default function ExamOracle() {
                 <div className="flex items-center justify-between px-2">
                   <h2 className="text-2xl font-black font-heading tracking-tight text-slate-900 uppercase italic">Timeline Archive</h2>
                   <div className="flex gap-2">
-                    <Select value={selectedSubject} onValueChange={setSelectedSubject}>
-                      <SelectTrigger className="w-40 md:w-56 bg-white rounded-xl font-bold uppercase text-[10px] tracking-widest">
-                        <SelectValue placeholder="All Subjects" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SUBJECTS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                          <Select value={selectedTopic} onValueChange={setSelectedTopic}>
+                            <SelectTrigger className="w-40 md:w-56 bg-white rounded-xl font-bold uppercase text-[10px] tracking-widest">
+                              <SelectValue placeholder="All Topics" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl border-slate-100">
+                              {topics.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
                   </div>
                 </div>
 
@@ -319,12 +334,12 @@ export default function ExamOracle() {
                           </Button>
                           {topics.map(t => (
                             <Button
-                              key={t}
-                              variant={selectedTopic === t ? 'secondary' : 'ghost'}
-                              onClick={() => setSelectedTopic(t)}
+                              key={t.id}
+                              variant={selectedTopic === t.name ? 'secondary' : 'ghost'}
+                              onClick={() => setSelectedTopic(t.name)}
                               className="w-full justify-start rounded-xl font-bold text-xs text-left px-4 h-auto py-3 leading-snug"
                             >
-                              {t}
+                              {t.name}
                             </Button>
                           ))}
                         </div>
@@ -423,10 +438,10 @@ export default function ExamOracle() {
 
                               {isMockMode ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                   {q.options.map((opt: string, i: number) => (
-                                     <Button key={i} variant="outline" className="justify-start h-14 rounded-2xl font-bold border-slate-100 hover:border-indigo-600 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700">
-                                       <span className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center mr-3 text-xs">{String.fromCharCode(65 + i)}</span>
-                                       {opt}
+                                   {Object.entries(q.options || {}).map(([label, text]: any) => (
+                                     <Button key={label} variant="outline" className="justify-start h-14 rounded-2xl font-bold border-slate-100 hover:border-indigo-600 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700">
+                                       <span className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center mr-3 text-xs">{label}</span>
+                                       {String(text)}
                                      </Button>
                                    ))}
                                 </div>

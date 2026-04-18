@@ -23,52 +23,123 @@ const initialDb = {
     { id: "1", name: "Lagos Academy", location: "Lagos", total_points: 1250 },
     { id: "2", name: "Abuja High", location: "Abuja", total_points: 980 }
   ],
+  subjects: [
+    { id: "s1", name: "Mathematics", category: "Science", created_at: new Date().toISOString() },
+    { id: "s2", name: "Biology", category: "Science", created_at: new Date().toISOString() },
+    { id: "s3", name: "Physics", category: "Science", created_at: new Date().toISOString() },
+    { id: "s4", name: "Chemistry", category: "Science", created_at: new Date().toISOString() },
+    { id: "s5", name: "English", category: "Arts", created_at: new Date().toISOString() },
+    { id: "s6", name: "Government", category: "Arts", created_at: new Date().toISOString() }
+  ],
+  topics: [
+    { id: "t1", subject_id: "s2", name: "Photosynthesis", syllabus_description: "Structure and functions of chloroplasts, light and dark reactions." },
+    { id: "t2", subject_id: "s1", name: "Calculus", syllabus_description: "Differentiation from first principles, differentiation of polynomials." },
+    { id: "t3", subject_id: "s3", name: "Mechanics", syllabus_description: "Laws of motion, work, energy and power." },
+    { id: "t4", subject_id: "s2", name: "Cell Biology", syllabus_description: "Cell structure, organelles and their functions." },
+    { id: "t5", subject_id: "s4", name: "Acids and Bases", syllabus_description: "Properties of acids, bases and salts; pH scale." },
+    { id: "t6", subject_id: "s6", name: "Constitutional Development", syllabus_description: "History of constitutional development in Nigeria." },
+    { id: "t7", subject_id: "s5", name: "Lexis and Structure", syllabus_description: "Vocabulary usage, sentence structure and grammar." }
+  ],
+  pastQuestions: [
+    {
+      id: "pq1",
+      exam_type: "JAMB",
+      year: 1998,
+      subject_id: "s2",
+      topic_id: "t1",
+      question_text: "Which of the following is the primary site of photosynthesis in a leaf?",
+      options: { A: "Stoma", B: "Mesophyll", C: "Epidermis", D: "Vascular bundle" },
+      correct_option: "B",
+      explanation: "Photosynthesis primarily takes place in the mesophyll layer of cells in the leaf, which contains numerous chloroplasts.",
+      image_url: null,
+      difficulty_level: 5,
+      created_at: new Date().toISOString()
+    },
+    {
+      id: "pq2",
+      exam_type: "WAEC",
+      year: 2015,
+      subject_id: "s1",
+      topic_id: "t2",
+      question_text: "Find the derivative of $y = 3x^2 + 5x - 7$ with respect to $x$.",
+      options: { A: "$6x + 5$", B: "$3x + 5$", C: "$6x - 7$", D: "$x^2 + 5$" },
+      correct_option: "A",
+      explanation: "Using the power rule: $\\frac{d}{dx}(ax^n) = anx^{n-1}$. So, $\\frac{dy}{dx} = 2(3)x^{2-1} + 1(5)x^{1-1} + 0 = 6x + 5$.",
+      image_url: null,
+      difficulty_level: 8,
+      created_at: new Date().toISOString()
+    },
+    {
+      id: "pq3",
+      exam_body: "NECO",
+      year: 1983,
+      subject_id: "s3",
+      topic_id: "t3",
+      question_content: "A car traveling at 20 m/s accelerates at 2 m/s² for 5 seconds. Find the final velocity.",
+      options: { A: "25 m/s", B: "30 m/s", C: "35 m/s", D: "40 m/s" },
+      correct_option: "B",
+      explanation: "Using $v = u + at$: $v = 20 + (2 \\times 5) = 20 + 10 = 30$ m/s.",
+      image_url: null,
+      difficulty_score: 6
+    },
+    {
+      id: "pq4",
+      exam_body: "JAMB",
+      year: 2024,
+      subject_id: "s2",
+      topic_id: "t1",
+      question_content: "The light-independent reactions of photosynthesis occur in the:",
+      options: { A: "Thylakoid", B: "Stroma", C: "Grana", D: "Mitochondria" },
+      correct_option: "B",
+      explanation: "The light-independent reactions (Calvin cycle) take place in the stroma of the chloroplast.",
+      image_url: null,
+      difficulty_score: 5
+    },
+    {
+      id: "pq5",
+      exam_body: "WAEC",
+      year: 2022,
+      subject_id: "s6",
+      topic_id: "t6",
+      question_content: "The Richards Constitution of 1946 was noted for introducing:",
+      options: { A: "A unitary system", B: "Regionalism", C: "Full independence", D: "A presidential system" },
+      correct_option: "B",
+      explanation: "The Richards Constitution of 1946 laid the foundation for regionalism in Nigeria by creating three regions: North, West, and East.",
+      image_url: null,
+      difficulty_score: 5
+    },
+    {
+      id: "pq6",
+      exam_body: "NECO",
+      year: 2018,
+      subject_id: "s4",
+      topic_id: "t5",
+      question_content: "Which of the following elements has the highest electronegativity?",
+      options: { A: "Fluorine", B: "Chlorine", C: "Oxygen", D: "Nitrogen" },
+      correct_option: "A",
+      explanation: "Fluorine is the most electronegative element on the periodic table due to its small atomic size and high effective nuclear charge.",
+      image_url: null,
+      difficulty_score: 3
+    },
+    {
+      id: "pq7",
+      exam_body: "JAMB",
+      year: 2025,
+      subject_id: "s5",
+      topic_id: "t7",
+      question_content: "Choose the word most nearly opposite in meaning to the capitalized word: The witness gave a CONSISTENT account of the incident.",
+      options: { A: "Coherent", B: "Contradictory", C: "Uniform", D: "Logical" },
+      correct_option: "B",
+      explanation: "The opposite of 'consistent' (agreeing, not conflicting) is 'contradictory' (mutually opposed).",
+      image_url: null,
+      difficulty_score: 2
+    }
+  ],
   content: [
     { id: "1", subject: "Mathematics", type: "video", title: "Algebra Basics", description: "Introduction to variables", url: "https://example.com/algebra", created_by: "admin" },
     { id: "2", subject: "Science", type: "text", title: "Photosynthesis", description: "How plants make food", content: "Photosynthesis is...", created_by: "admin" }
   ],
-  questions: [
-    { 
-      id: "q1", 
-      subject: "Mathematics", 
-      exam_type: "JAMB", 
-      question_text: "Solve for x: 3x - 7 = 14", 
-      options: ["x = 7", "x = 6", "x = 5", "x = 8"], 
-      correct_answer: "x = 7", 
-      explanation: "Add 7 to both sides: 3x = 21. Divide by 3: x = 7.", 
-      difficulty: "Easy" 
-    },
-    { 
-      id: "q2", 
-      subject: "Physics", 
-      exam_type: "WAEC", 
-      question_text: "What is the unit of force?", 
-      options: ["Joule", "Watt", "Newton", "Pascal"], 
-      correct_answer: "Newton", 
-      explanation: "Force is measured in Newtons (N) according to SI units.", 
-      difficulty: "Easy" 
-    },
-    {
-      id: "q3",
-      subject: "Mathematics",
-      exam_type: "JAMB",
-      question_text: "What is the square root of 144?",
-      options: ["10", "11", "12", "13"],
-      correct_answer: "12",
-      explanation: "12 * 12 = 144.",
-      difficulty: "Easy"
-    },
-    {
-      id: "q4",
-      subject: "Biology",
-      exam_type: "WAEC",
-      question_text: "Which organ is responsible for pumping blood?",
-      options: ["Lungs", "Brain", "Heart", "Liver"],
-      correct_answer: "Heart",
-      explanation: "The heart pumps blood throughout the body.",
-      difficulty: "Easy"
-    }
-  ],
+  questions: [], // Legacy field, kept for backward compatibility if needed by frontend
   courses: [
     { id: "c1", subject: "Mathematics", title: "Mastering Algebra", description: "From basics to advanced equations." },
     { id: "c2", subject: "Physics", title: "Mechanics 101", description: "Understanding motion and forces." }
@@ -94,99 +165,6 @@ const initialDb = {
   },
   battleRooms: [],
   leaderboardHistory: [],
-  pastQuestions: [
-    {
-      id: "pq1",
-      exam: "JAMB",
-      year: 1998,
-      subject: "Biology",
-      topic: "Photosynthesis",
-      question_text: "Which of the following is the primary site of photosynthesis in a leaf?",
-      options: ["Stoma", "Mesophyll", "Epidermis", "Vascular bundle"],
-      correct_answer: "Mesophyll",
-      explanation: "Photosynthesis primarily takes place in the mesophyll layer of cells in the leaf, which contains numerous chloroplasts.",
-      difficulty: "Medium",
-      syllabus_link: "https://eduarena.com/syllabus/jamb/biology/2.1"
-    },
-    {
-      id: "pq2",
-      exam: "WAEC",
-      year: 2015,
-      subject: "Mathematics",
-      topic: "Calculus",
-      question_text: "Find the derivative of $y = 3x^2 + 5x - 7$ with respect to $x$.",
-      options: ["$6x + 5$", "$3x + 5$", "$6x - 7$", "$x^2 + 5$"],
-      correct_answer: "$6x + 5$",
-      explanation: "Using the power rule: $\\frac{d}{dx}(ax^n) = anx^{n-1}$. So, $\\frac{dy}{dx} = 2(3)x^{2-1} + 1(5)x^{1-1} + 0 = 6x + 5$.",
-      difficulty: "Hard",
-      syllabus_link: "https://eduarena.com/syllabus/waec/math/4.3"
-    },
-    {
-      id: "pq3",
-      exam: "NECO",
-      year: 1983,
-      subject: "Physics",
-      topic: "Mechanics",
-      question_text: "A car traveling at 20 m/s accelerates at 2 m/s² for 5 seconds. Find the final velocity.",
-      options: ["25 m/s", "30 m/s", "35 m/s", "40 m/s"],
-      correct_answer: "30 m/s",
-      explanation: "Using $v = u + at$: $v = 20 + (2 \\times 5) = 20 + 10 = 30$ m/s.",
-      difficulty: "Medium",
-      syllabus_link: "https://eduarena.com/syllabus/neco/physics/1.1"
-    },
-    {
-      id: "pq4",
-      exam: "JAMB",
-      year: 2024,
-      subject: "Biology",
-      topic: "Photosynthesis",
-      question_text: "The light-independent reactions of photosynthesis occur in the:",
-      options: ["Thylakoid", "Stroma", "Grana", "Mitochondria"],
-      correct_answer: "Stroma",
-      explanation: "The light-independent reactions (Calvin cycle) take place in the stroma of the chloroplast.",
-      difficulty: "Medium",
-      syllabus_link: "https://eduarena.com/syllabus/jamb/biology/2.1"
-    },
-    {
-      id: "pq5",
-      exam: "WAEC",
-      year: 2022,
-      subject: "Government",
-      topic: "Constitutional Development",
-      question_text: "The Richards Constitution of 1946 was noted for introducing:",
-      options: ["A unitary system", "Regionalism", "Full independence", "A presidential system"],
-      correct_answer: "Regionalism",
-      explanation: "The Richards Constitution of 1946 laid the foundation for regionalism in Nigeria by creating three regions: North, West, and East.",
-      difficulty: "Medium",
-      syllabus_link: "https://eduarena.com/syllabus/waec/govt/1.2"
-    },
-    {
-      id: "pq6",
-      exam: "NECO",
-      year: 2018,
-      subject: "Chemistry",
-      topic: "Periodic Table",
-      question_text: "Which of the following elements has the highest electronegativity?",
-      options: ["Fluorine", "Chlorine", "Oxygen", "Nitrogen"],
-      correct_answer: "Fluorine",
-      explanation: "Fluorine is the most electronegative element on the periodic table due to its small atomic size and high effective nuclear charge.",
-      difficulty: "Easy",
-      syllabus_link: "https://eduarena.com/syllabus/neco/chemistry/2.1"
-    },
-    {
-      id: "pq7",
-      exam: "JAMB",
-      year: 2025,
-      subject: "English",
-      topic: "Lexis and Structure",
-      question_text: "Choose the word most nearly opposite in meaning to the capitalized word: The witness gave a CONSISTENT account of the incident.",
-      options: ["Coherent", "Contradictory", "Uniform", "Logical"],
-      correct_answer: "Contradictory",
-      explanation: "The opposite of 'consistent' (agreeing, not conflicting) is 'contradictory' (mutually opposed).",
-      difficulty: "Easy",
-      syllabus_link: "https://eduarena.com/syllabus/jamb/english/1.4"
-    }
-  ],
   syllabus: [
     { exam: "JAMB", subject: "Biology", topic: "Photosynthesis", description: "Structure and functions of chloroplasts, light and dark reactions." },
     { exam: "WAEC", subject: "Mathematics", topic: "Calculus", description: "Differentiation from first principles, differentiation of polynomials." }
@@ -648,17 +626,240 @@ async function startServer() {
     res.json({ success: true, message: "Solution requested successfully. Our experts will notify you soon!" });
   });
 
-  // --- Exam Oracle & AI Mastery Routes ---
-  app.get("/api/oracle/search", (req, res) => {
-    const { exam, year, subject, topic, difficulty, page = "1", limit = "20" } = req.query;
+  // Admin Factory Endpoints
+  app.get("/api/admin/subjects", (req, res) => {
+    const db = getDb();
+    res.json(db.subjects);
+  });
+
+  app.post("/api/admin/subjects", (req, res) => {
+    const { name, category } = req.body;
+    const db = getDb();
+    if (db.subjects.find((s: any) => s.name.toLowerCase() === name.toLowerCase())) {
+      return res.status(400).json({ error: "Subject already exists" });
+    }
+    const newSubject = { id: `s${Date.now()}`, name, category, created_at: new Date().toISOString() };
+    db.subjects.push(newSubject);
+    saveDb(db);
+    res.json(newSubject);
+  });
+
+  app.post("/api/admin/topics", (req, res) => {
+    const { subject_id, name, syllabus_description } = req.body;
+    const db = getDb();
+    if (db.topics.find((t: any) => t.subject_id === subject_id && t.name.toLowerCase() === name.toLowerCase())) {
+      return res.status(400).json({ error: "Topic already exists for this subject" });
+    }
+    const newTopic = { id: `t${Date.now()}`, subject_id, name, syllabus_description };
+    db.topics.push(newTopic);
+    saveDb(db);
+    res.json(newTopic);
+  });
+
+  app.get("/api/admin/questions", (req, res) => {
+    const { exam_type, year, subject_id, topic_id, search, page = "1", limit = "50" } = req.query;
     const db = getDb();
     let filtered = db.pastQuestions;
 
-    if (exam) filtered = filtered.filter((q: any) => q.exam === exam);
+    if (exam_type) filtered = filtered.filter((q: any) => q.exam_type === exam_type);
     if (year) filtered = filtered.filter((q: any) => q.year === Number(year));
-    if (subject) filtered = filtered.filter((q: any) => q.subject === subject);
-    if (topic) filtered = filtered.filter((q: any) => q.topic?.toLowerCase().includes(String(topic).toLowerCase()));
-    if (difficulty) filtered = filtered.filter((q: any) => q.difficulty === difficulty);
+    if (subject_id) filtered = filtered.filter((q: any) => q.subject_id === subject_id);
+    if (topic_id) filtered = filtered.filter((q: any) => q.topic_id === topic_id);
+    if (search) {
+      const s = String(search).toLowerCase();
+      filtered = filtered.filter((q: any) => q.question_text.toLowerCase().includes(s));
+    }
+
+    const p = Number(page);
+    const l = Number(limit);
+    const paginated = filtered.slice((p - 1) * l, p * l);
+
+    res.json({
+      total: filtered.length,
+      questions: paginated
+    });
+  });
+
+  app.post("/api/admin/questions", (req, res) => {
+    const questionData = req.body;
+    const db = getDb();
+
+    // Duplicate Check: Same text for same exam + year
+    const isDuplicate = db.pastQuestions.some((q: any) => 
+      q.exam_type === questionData.exam_type && 
+      q.year === Number(questionData.year) && 
+      q.question_text.trim().toLowerCase() === questionData.question_text.trim().toLowerCase()
+    );
+
+    if (isDuplicate) {
+      return res.status(400).json({ error: "A question with this exact text already exists for this exam and year." });
+    }
+
+    const newQuestion = {
+      id: `pq-${Date.now()}`,
+      ...questionData,
+      year: Number(questionData.year),
+      difficulty_level: Number(questionData.difficulty_level || 5),
+      created_at: new Date().toISOString()
+    };
+
+    db.pastQuestions.push(newQuestion);
+    saveDb(db);
+    res.json({ success: true, question: newQuestion });
+  });
+
+  app.put("/api/admin/questions/:id", (req, res) => {
+    const { id } = req.params;
+    const updatedData = req.body;
+    const db = getDb();
+    const index = db.pastQuestions.findIndex((q: any) => q.id === id);
+    if (index === -1) return res.status(404).json({ error: "Question not found" });
+
+    db.pastQuestions[index] = { ...db.pastQuestions[index], ...updatedData, year: Number(updatedData.year) };
+    saveDb(db);
+    res.json({ success: true, question: db.pastQuestions[index] });
+  });
+
+  app.delete("/api/admin/questions/:id", (req, res) => {
+    const { id } = req.params;
+    const db = getDb();
+    db.pastQuestions = db.pastQuestions.filter((q: any) => q.id !== id);
+    saveDb(db);
+    res.json({ success: true });
+  });
+
+  // --- Exam Oracle & AI Mastery Routes ---
+  app.get("/api/oracle/questions/by-year", (req, res) => {
+    const { exam, year, subject_id, page = "1", limit = "20" } = req.query;
+    const db = getDb();
+    let filtered = db.pastQuestions;
+
+    if (exam) filtered = filtered.filter((q: any) => (q.exam_type || q.exam_body) === exam);
+    if (year) filtered = filtered.filter((q: any) => q.year === Number(year));
+    if (subject_id) filtered = filtered.filter((q: any) => q.subject_id === subject_id);
+
+    const p = Number(page);
+    const l = Number(limit);
+    const paginated = filtered.slice((p - 1) * l, p * l);
+
+    res.json({
+      total: filtered.length,
+      page: p,
+      limit: l,
+      questions: paginated
+    });
+  });
+
+  app.get("/api/oracle/questions/by-topic", (req, res) => {
+    const { topic_id, page = "1", limit = "20" } = req.query;
+    const db = getDb();
+    let filtered = db.pastQuestions.filter((q: any) => q.topic_id === topic_id);
+
+    const p = Number(page);
+    const l = Number(limit);
+    const paginated = filtered.slice((p - 1) * l, p * l);
+
+    res.json({
+      total: filtered.length,
+      page: p,
+      limit: l,
+      questions: paginated
+    });
+  });
+
+  app.get("/api/arena/battle-set", (req, res) => {
+    const { subject_id, count = "10" } = req.query;
+    const db = getDb();
+    let pool = db.pastQuestions;
+    if (subject_id) pool = pool.filter((q: any) => q.subject_id === subject_id);
+
+    // Shuffle and pick
+    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+    const set = shuffled.slice(0, Number(count));
+
+    res.json(set);
+  });
+
+  app.get("/api/oracle/training-snapshot", (req, res) => {
+    const { topic_id } = req.query;
+    const db = getDb();
+    const topic = db.topics.find((t: any) => t.id === topic_id);
+    if (!topic) return res.status(404).json({ error: "Topic not found" });
+
+    const subject = db.subjects.find((s: any) => s.id === topic.subject_id);
+    const questions = db.pastQuestions.filter((q: any) => q.topic_id === topic_id);
+
+    res.json({
+      topic_id,
+      topic_name: topic.name,
+      subject_name: subject?.name,
+      syllabus: topic.syllabus_description,
+      question_count: questions.length,
+      questions: questions.map((q: any) => ({
+        id: q.id,
+        year: q.year,
+        exam: q.exam_type || q.exam_body,
+        content: q.question_text || q.question_content,
+        difficulty: q.difficulty_level || q.difficulty_score
+      }))
+    });
+  });
+
+  // Admin Import Pipeline
+  app.post("/api/admin/import", (req, res) => {
+    const { type, data } = req.body; // type: 'json' | 'csv-sim'
+    const db = getDb();
+    
+    if (type === 'questions') {
+      const newQuestions = data.map((item: any) => ({
+        id: `pq-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        ...item,
+        created_at: new Date().toISOString()
+      }));
+
+      // Basic validation: check for duplicates by exam+year+content hash (simulated)
+      const existingHashes = new Set(db.pastQuestions.map((q: any) => `${q.exam_type || q.exam_body}-${q.year}-${(q.question_text || q.question_content).substring(0, 50)}`));
+      const filtered = newQuestions.filter((q: any) => !existingHashes.has(`${q.exam_type || q.exam_body}-${q.year}-${(q.question_text || q.question_content).substring(0, 50)}`));
+
+      db.pastQuestions.push(...filtered);
+      saveDb(db);
+      return res.json({ success: true, added: filtered.length, skipped: newQuestions.length - filtered.length });
+    }
+
+    res.status(400).json({ error: "Invalid import type" });
+  });
+
+  // AI-OCR Hook Simulator
+  app.post("/api/admin/ocr-ingest", (req, res) => {
+    const { structured_payload } = req.body;
+    // structured_payload would be from Vision AI conversion
+    const db = getDb();
+    
+    // Simulate difficulty calculation if missing
+    if (!structured_payload.difficulty_level && !structured_payload.difficulty_score) {
+      structured_payload.difficulty_level = Math.floor(Math.random() * 10) + 1;
+    }
+
+    db.pastQuestions.push({
+      id: `pq-ocr-${Date.now()}`,
+      ...structured_payload,
+      created_at: new Date().toISOString()
+    });
+
+    saveDb(db);
+    res.json({ success: true, id: structured_payload.id });
+  });
+
+  app.get("/api/oracle/search", (req, res) => {
+    const { exam, year, subject_id, topic_id, difficulty, page = "1", limit = "20" } = req.query;
+    const db = getDb();
+    let filtered = db.pastQuestions;
+
+    if (exam) filtered = filtered.filter((q: any) => (q.exam_type || q.exam_body) === exam);
+    if (year) filtered = filtered.filter((q: any) => q.year === Number(year));
+    if (subject_id) filtered = filtered.filter((q: any) => q.subject_id === subject_id);
+    if (topic_id) filtered = filtered.filter((q: any) => q.topic_id === topic_id);
+    if (difficulty) filtered = filtered.filter((q: any) => (q.difficulty_level || q.difficulty_score) === Number(difficulty));
 
     const p = Number(page);
     const l = Number(limit);
@@ -679,10 +880,21 @@ async function startServer() {
   });
 
   app.get("/api/oracle/topics", (req, res) => {
-    const { subject } = req.query;
+    const { subject_id, subject_name } = req.query;
     const db = getDb();
-    const topics = Array.from(new Set(db.pastQuestions.filter((q: any) => !subject || q.subject === subject).map((q: any) => q.topic)));
-    res.json(topics);
+    
+    let filteredTopics = db.topics;
+    
+    if (subject_id) {
+       filteredTopics = filteredTopics.filter((t: any) => t.subject_id === subject_id);
+    } else if (subject_name) {
+       const subject = db.subjects.find((s: any) => s.name.toLowerCase() === String(subject_name).toLowerCase());
+       if (subject) {
+         filteredTopics = filteredTopics.filter((t: any) => t.subject_id === subject.id);
+       }
+    }
+    
+    res.json(filteredTopics);
   });
 
   app.get("/api/oracle/predictions", (req, res) => {

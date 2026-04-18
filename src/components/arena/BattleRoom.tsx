@@ -387,18 +387,25 @@ export default function BattleRoom({ battleId, players, questions, socket, onCom
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {currentQuestion.options.map((option: string, i: number) => (
+            {Object.entries(currentQuestion.options || {}).map(([label, text]: any) => (
               <Button
-                key={i}
-                onClick={() => handleAnswer(option)}
+                key={label}
+                onClick={() => handleAnswer(label)}
                 disabled={!!selectedAnswer || timeLeft === 0}
-                className={`h-20 text-lg font-bold rounded-2xl border-2 transition-all ${
-                  selectedAnswer === option 
+                className={`h-20 text-lg font-bold rounded-2xl border-2 transition-all flex items-center justify-start px-6 gap-4 ${
+                  selectedAnswer === label 
                   ? 'bg-arena-primary border-arena-neon text-white' 
                   : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
                 }`}
               >
-                {option}
+                <div className={`w-8 h-8 flex items-center justify-center font-black rounded-lg ${selectedAnswer === label ? 'bg-white text-arena-primary' : 'bg-white/10 text-slate-400'}`}>
+                    {label}
+                </div>
+                <div className="flex-1 text-left">
+                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        {text}
+                    </ReactMarkdown>
+                </div>
               </Button>
             ))}
           </div>

@@ -20,7 +20,7 @@ function getAI() {
       console.warn('GEMINI_API_KEY is not defined. AI Help Desk will be offline.');
       return null;
     }
-    aiInstance = new GoogleGenAI(apiKey);
+    aiInstance = new GoogleGenAI({ apiKey });
   }
   return aiInstance;
 }

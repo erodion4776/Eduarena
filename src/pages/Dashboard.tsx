@@ -13,12 +13,14 @@ import PracticeMode from '@/src/components/hub/PracticeMode';
 import ScholarLounge from '@/src/components/social/ScholarLounge';
 import Inventory from '@/src/components/profile/Inventory';
 import JackpotWidget from '@/src/components/economy/JackpotWidget';
+import QuestionFactory from '@/src/components/admin/QuestionFactory';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LayoutDashboard, BookOpen, Trophy, Swords, MessageSquare, Ghost, Sparkles } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Trophy, Swords, MessageSquare, Ghost, Sparkles, Database } from 'lucide-react';
 
-type View = 'dashboard' | 'hub' | 'solutions' | 'oracle' | 'learning' | 'question' | 'practice' | 'lounge' | 'inventory' | 'arena';
+type View = 'dashboard' | 'hub' | 'solutions' | 'oracle' | 'learning' | 'question' | 'practice' | 'lounge' | 'inventory' | 'arena' | 'admin';
 
 export default function Dashboard() {
+  const { user } = useAuthStore();
   const { mode, setMode } = useThemeStore();
   const [view, setView] = useState<View>('dashboard');
   const [selectedCourse, setSelectedCourse] = useState<any>(null);
@@ -108,6 +110,8 @@ export default function Dashboard() {
         return <ScholarLounge />;
       case 'inventory':
         return <Inventory />;
+      case 'admin':
+        return user?.role === 'admin' ? <QuestionFactory /> : <StudyDashboard />;
       default:
         return <StudyDashboard />;
     }
@@ -152,6 +156,14 @@ export default function Dashboard() {
               >
                 <Swords className="w-4 h-4" /> Battle Arena
               </TabsTrigger>
+              {user?.role === 'admin' && (
+                <TabsTrigger 
+                  value="admin" 
+                  className={`rounded-lg gap-2 font-bold ${mode === 'arena' ? 'data-[state=active]:bg-arena-primary data-[state=active]:text-white text-slate-400 hover:text-white' : 'data-[state=active]:bg-white data-[state=active]:shadow-sm'}`}
+                >
+                  <Database className="w-4 h-4" /> Question Factory
+                </TabsTrigger>
+              )}
               <TabsTrigger 
                 value="lounge" 
                 className={`rounded-lg gap-2 font-bold ${mode === 'arena' ? 'data-[state=active]:bg-arena-primary data-[state=active]:text-white text-slate-400 hover:text-white' : 'data-[state=active]:bg-white data-[state=active]:shadow-sm'}`}

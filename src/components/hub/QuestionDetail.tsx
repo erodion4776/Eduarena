@@ -38,9 +38,9 @@ export default function QuestionDetail({ question, onBack }: any) {
         </CardHeader>
         <CardContent className="p-10 space-y-8">
           <div className="grid grid-cols-1 gap-4">
-            {question.options.map((option: string) => {
-              const isCorrect = option === question.correct_answer;
-              const isSelected = option === selectedOption;
+            {Object.entries(question.options || {}).map(([label, text]: any) => {
+              const isCorrect = label === (question.correct_option || question.correct_answer);
+              const isSelected = label === selectedOption;
               
               let className = "w-full p-6 text-lg font-bold rounded-2xl border-2 transition-all text-left flex items-center justify-between ";
               
@@ -54,12 +54,17 @@ export default function QuestionDetail({ question, onBack }: any) {
 
               return (
                 <button 
-                  key={option} 
+                  key={label} 
                   className={className}
-                  onClick={() => handleOptionClick(option)}
+                  onClick={() => handleOptionClick(label)}
                   disabled={showAnswer}
                 >
-                  <span>{option}</span>
+                  <div className="flex items-center gap-4">
+                    <div className={`w-8 h-8 flex items-center justify-center font-black rounded-lg ${showAnswer && isCorrect ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                      {label}
+                    </div>
+                    <span>{text}</span>
+                  </div>
                   {showAnswer && isCorrect && <CheckCircle2 className="w-6 h-6" />}
                 </button>
               );
