@@ -43,6 +43,15 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    const handleArenaNav = () => {
+      setMode('arena');
+      setView('arena');
+    };
+    window.addEventListener('navigate-to-arena', handleArenaNav);
+    return () => window.removeEventListener('navigate-to-arena', handleArenaNav);
+  }, [setMode]);
+
+  useEffect(() => {
     if (view === 'arena') {
       setMode('arena');
     } else {

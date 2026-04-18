@@ -133,6 +133,58 @@ const initialDb = {
       explanation: "Using $v = u + at$: $v = 20 + (2 \\times 5) = 20 + 10 = 30$ m/s.",
       difficulty: "Medium",
       syllabus_link: "https://eduarena.com/syllabus/neco/physics/1.1"
+    },
+    {
+      id: "pq4",
+      exam: "JAMB",
+      year: 2024,
+      subject: "Biology",
+      topic: "Photosynthesis",
+      question_text: "The light-independent reactions of photosynthesis occur in the:",
+      options: ["Thylakoid", "Stroma", "Grana", "Mitochondria"],
+      correct_answer: "Stroma",
+      explanation: "The light-independent reactions (Calvin cycle) take place in the stroma of the chloroplast.",
+      difficulty: "Medium",
+      syllabus_link: "https://eduarena.com/syllabus/jamb/biology/2.1"
+    },
+    {
+      id: "pq5",
+      exam: "WAEC",
+      year: 2022,
+      subject: "Government",
+      topic: "Constitutional Development",
+      question_text: "The Richards Constitution of 1946 was noted for introducing:",
+      options: ["A unitary system", "Regionalism", "Full independence", "A presidential system"],
+      correct_answer: "Regionalism",
+      explanation: "The Richards Constitution of 1946 laid the foundation for regionalism in Nigeria by creating three regions: North, West, and East.",
+      difficulty: "Medium",
+      syllabus_link: "https://eduarena.com/syllabus/waec/govt/1.2"
+    },
+    {
+      id: "pq6",
+      exam: "NECO",
+      year: 2018,
+      subject: "Chemistry",
+      topic: "Periodic Table",
+      question_text: "Which of the following elements has the highest electronegativity?",
+      options: ["Fluorine", "Chlorine", "Oxygen", "Nitrogen"],
+      correct_answer: "Fluorine",
+      explanation: "Fluorine is the most electronegative element on the periodic table due to its small atomic size and high effective nuclear charge.",
+      difficulty: "Easy",
+      syllabus_link: "https://eduarena.com/syllabus/neco/chemistry/2.1"
+    },
+    {
+      id: "pq7",
+      exam: "JAMB",
+      year: 2025,
+      subject: "English",
+      topic: "Lexis and Structure",
+      question_text: "Choose the word most nearly opposite in meaning to the capitalized word: The witness gave a CONSISTENT account of the incident.",
+      options: ["Coherent", "Contradictory", "Uniform", "Logical"],
+      correct_answer: "Contradictory",
+      explanation: "The opposite of 'consistent' (agreeing, not conflicting) is 'contradictory' (mutually opposed).",
+      difficulty: "Easy",
+      syllabus_link: "https://eduarena.com/syllabus/jamb/english/1.4"
     }
   ],
   syllabus: [

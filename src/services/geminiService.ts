@@ -11,12 +11,12 @@ export async function generateTutorial(topic: string, subject: string, pastQuest
 
     Generate a detailed tutorial for this topic. 
     Focus on:
-    1. Key concepts students must master.
-    2. Summary of how this topic is tested in past exams (1983-2025).
+    1. "The Essence": A 3-bullet summary of the topic's core concepts.
+    2. "How they test this": A section analyzing how this topic appeared in exams historically (e.g., comparing 1995 vs 2020 patterns). 
     3. Common traps and pitfalls to avoid.
-    4. Most frequent question types.
+    4. "Mastery Strategy": How to tackle frequent question types.
 
-    Format the output in Markdown with clear headings.
+    Format the output in Markdown with clear, bold headings for "The Essence" and "How they test this".
   `;
 
   const response = await ai.models.generateContent({
