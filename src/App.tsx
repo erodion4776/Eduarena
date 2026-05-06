@@ -9,6 +9,7 @@ import { useAuthStore } from '@/src/store/useAuthStore';
 import Login from '@/src/pages/Login';
 import Dashboard from '@/src/pages/Dashboard';
 import AdminPage from '@/src/pages/Admin';
+import AdminArena from '@/src/pages/AdminArena';
 import { Toaster } from '@/components/ui/sonner';
 
 export default function App() {
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="/" element={user ? <Dashboard /> : <Navigate to="/login" />} />
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin/arena" element={<AdminArena />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
       <Toaster />

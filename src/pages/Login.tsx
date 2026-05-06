@@ -99,32 +99,6 @@ export default function Login() {
                 <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 py-6 text-lg font-semibold">
                   {isLogin ? 'Welcome Back' : 'Join the Arena'}
                 </Button>
-                
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-slate-200"></span>
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white px-2 text-slate-500">Or skip for now</span>
-                  </div>
-                </div>
-
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="w-full py-6 border-2 border-slate-200 hover:bg-slate-50 font-bold"
-                  onClick={() => setUser({
-                    id: 'demo-user',
-                    name: 'Demo Student',
-                    email: 'demo@eduarena.com',
-                    role: 'student',
-                    points: 1250,
-                    level: 5,
-                    school_id: 'lagos-academy'
-                  })}
-                >
-                  Demo Access
-                </Button>
               </div>
             </form>
           </Tabs>
