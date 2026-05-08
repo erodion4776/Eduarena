@@ -1,8 +1,11 @@
 import { supabase } from './supabase';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Define worker source for pdf.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+// Define worker source for pdf.js using Vite's URL handling
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).toString();
 
 function chunkText(text: string, maxWords: number = 200): string[] {
   const words = text.split(/\s+/);
