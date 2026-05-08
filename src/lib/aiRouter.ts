@@ -74,12 +74,15 @@ export const aiRouter = {
     try {
       const geminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
       if (geminiKey) {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
-        const response = await ai.models.generateContent({
-          model: 'gemini-1.5-flash',
-          contents: fullPrompt,
+        const genAI = new GoogleGenAI({ apiKey: geminiKey });
+        const model = genAI.getGenerativeModel({ 
+            model: 'gemini-1.5-flash',
+            systemInstruction: "Act as Tutor Chuks, a brilliant but direct Nigerian tutor. Keep answers short and exam-focused."
         });
-        if (response.text) return { answer: response.text, provider: 'gemini' };
+        const result = await model.generateContent(fullPrompt);
+        const response = await result.response;
+        const text = response.text();
+        if (text) return { answer: text.trim(), provider: 'gemini' };
       }
     } catch (e) {
       console.warn("Gemini failed, trying Groq...", e);
@@ -87,7 +90,7 @@ export const aiRouter = {
 
     // 2. Fallback to Groq
     try {
-      const groqKey = (import.meta as any).env.VITE_GROK_API_KEY;
+      const groqKey = (import.meta as any).env.VITE_GROQ_API_KEY || (import.meta as any).env.VITE_GROK_API_KEY;
       if (groqKey) {
         const groq = new Groq({ apiKey: groqKey, dangerouslyAllowBrowser: true });
         const chatCompletion = await groq.chat.completions.create({

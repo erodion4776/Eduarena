@@ -23,15 +23,12 @@ async function callWithRetry(prompt: string, config: any, retries = 2): Promise<
     for (let i = 0; i <= retries; i++) {
         const modelName = i === 0 ? PRIMARY_MODEL : FALLBACK_MODEL;
         try {
-            return await ai.models.generateContent({
-                model: modelName,
-                contents: prompt,
-                config: {
-                    ...config,
-                    // If token limit is hit, we might need a longer context/output window, 
-                    // though for simple generation, increasing retries is all we can do here.
-                }
-            });
+            const model = ai.getGenerativeModel({ model: modelName, generationConfig: config });
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            return {
+                text: response.text()
+            };
         } catch (error) {
             console.error(`Attempt ${i+1} failed with ${modelName}:`, error);
             if (i === retries) throw error;
