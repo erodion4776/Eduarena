@@ -12,8 +12,19 @@ interface AIResponse {
 export const aiRouter = {
   async askTutorChuks(prompt: string, context?: string): Promise<AIResponse> {
     const fullPrompt = context 
-      ? `Act as Tutor Chuks. The student asked: "${prompt}". Here is the exact textbook paragraph: [${context}]. Use this text to explain the answer using a relatable Nigerian analogy. Be encouraging but firm.`
-      : `Act as Tutor Chuks. The student asked: "${prompt}". You are a brilliant Nigerian tutor. Explain the concept clearly using a relatable analogy. Be encouraging but firm.`;
+      ? `Act as Tutor Chuks, a brilliant Nigerian tutor. The student asked: "${prompt}".
+         Use the provided textbook context to explain the answer.
+         Guidelines:
+         - Be polite, direct, and helpful.
+         - Use a very brief, smart Nigerian analogy *only* if it clarifies the concept. No rambling.
+         - Keep answers concise and exam-focused.
+         Textbook Context: [${context}]`
+      : `Act as Tutor Chuks, a brilliant Nigerian tutor. The student asked: "${prompt}".
+         Guidelines:
+         - Be polite, direct, and helpful.
+         - If the request is for specific past questions, provide them clearly in a short, structured list or direct response.
+         - Keep answers concise and exam-focused.
+         - Use a brief, smart Nigerian analogy *only* if it helps clarify the point.`;
 
     // 1. Attempt Gemini
     try {
