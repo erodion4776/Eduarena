@@ -4,22 +4,32 @@ import { GoogleGenAI } from '@google/genai';
 interface AIResponse {
   answer: string;
   source?: string;
-  provider: 'gemini' | 'grok' | 'huggingface' | 'simulated';
+  provider: string;
 }
 
 export const aiRouter = {
   async askTutorChuks(prompt: string, context?: string): Promise<{ answer: string, source?: string, provider: string }> {
     try {
-      const res = await fetch('/api/oracle/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, context })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data;
+      const geminiKey = process.env.GEMINI_API_KEY;
+      if (!geminiKey || geminiKey === 'undefined') {
+        throw new Error("Gemini Key Missing");
       }
-      throw new Error("Backend AI Proxy failed");
+
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      
+      const fullPrompt = context 
+        ? `Act as Tutor Chuks. The student asked: "${prompt}". Here is the exact textbook paragraph: [${context}]. Use this text to explain the answer using a relatable Nigerian analogy. Be encouraging but firm.`
+        : `Act as Tutor Chuks. The student asked: "${prompt}". You are a brilliant Nigerian tutor. Explain the concept clearly using a relatable analogy.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: fullPrompt,
+      });
+
+      if (response.text) {
+        return { answer: response.text, provider: 'gemini' };
+      }
+      throw new Error("No response text");
     } catch (e) {
       console.warn("AI Proxy Error, falling back to simulated:", e);
       return new Promise((resolve) => {

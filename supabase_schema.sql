@@ -99,7 +99,23 @@ alter table public.pdf_documents enable row level security;
 alter table public.document_chunks enable row level security;
 
 -- (For testing purposes, allow read access to everything, but restrict writes to authenticated admins)
+drop policy if exists "Allow public read access to subjects" on public.subjects;
 create policy "Allow public read access to subjects" on public.subjects for select using (true);
+
+drop policy if exists "Allow public read access to topics" on public.topics;
 create policy "Allow public read access to topics" on public.topics for select using (true);
+
+drop policy if exists "Allow public read access to questions" on public.questions;
 create policy "Allow public read access to questions" on public.questions for select using (true);
+
+drop policy if exists "Allow public read access to document_chunks" on public.document_chunks;
 create policy "Allow public read access to document_chunks" on public.document_chunks for select using (true);
+
+drop policy if exists "Allow public read access to pdf_documents" on public.pdf_documents;
+create policy "Allow public read access to pdf_documents" on public.pdf_documents for select using (true);
+
+drop policy if exists "Allow public insert to pdf_documents" on public.pdf_documents;
+create policy "Allow public insert to pdf_documents" on public.pdf_documents for insert with check (true);
+
+drop policy if exists "Allow public insert to document_chunks" on public.document_chunks;
+create policy "Allow public insert to document_chunks" on public.document_chunks for insert with check (true);

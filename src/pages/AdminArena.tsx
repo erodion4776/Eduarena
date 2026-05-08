@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { create } from 'zustand';
 import { ragService } from '@/src/lib/ragService';
 import { aiRouter } from '@/src/lib/aiRouter';
+import { questionImportService } from '@/src/lib/questionImportService';
 
 interface AdminArenaState {
   isUnlocked: boolean;
@@ -30,6 +31,11 @@ export default function AdminArena() {
   const [uploadSubject, setUploadSubject] = useState('Biology');
   const [uploadTopic, setUploadTopic] = useState('General');
   
+  // Bulk Importer State
+  const [importProgress, setImportProgress] = useState<string[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const jsonInputRef = useRef<HTMLInputElement>(null);
+
   // Simulator State
   const [simQuery, setSimQuery] = useState('');
   const [simResults, setSimResults] = useState<{ role: 'user' | 'ai'; text: string; provider?: string }[]>([]);
@@ -64,6 +70,63 @@ export default function AdminArena() {
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleJsonUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportProgress([]);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target?.result as string;
+        const data = JSON.parse(text);
+        if (!Array.isArray(data)) {
+          throw new Error("JSON file must contain an array of questions.");
+        }
+
+        await questionImportService.importQuestionsBatch(data, (msg) => {
+          setImportProgress(prev => [...prev, msg]);
+        });
+      } catch (err: any) {
+        console.error(err);
+        setImportProgress(prev => [...prev, `ERROR: ${err.message}`]);
+      } finally {
+        setIsImporting(false);
+      }
+    };
+    reader.onerror = () => {
+      setImportProgress(prev => [...prev, "ERROR: Failed to read file."]);
+      setIsImporting(false);
+    };
+    reader.readAsText(file);
+  };
+
+  const downloadSampleJson = () => {
+    const sample = [
+      {
+        "subject_name": "Biology",
+        "topic_name": "Cell Biology",
+        "question_content": "Which organelle is the powerhouse of the cell?",
+        "options": ["Nucleus", "Mitochondria", "Ribosome", "Endoplasmic Reticulum"],
+        "correct_answer": "Mitochondria",
+        "explanation": "Mitochondria generate most of the chemical energy needed to power the cell's biochemical reactions.",
+        "difficulty_level": 1,
+        "year": 1983
+      }
+    ];
+    const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'jamb_questions_template.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleSimulate = async (e: React.FormEvent) => {
@@ -230,6 +293,49 @@ export default function AdminArena() {
                        {isUploading && (
                          <div className="flex items-center gap-2 text-rose-400 animate-pulse mt-2">
                            <div className="w-1.5 h-3 bg-rose-500" /> Processing...
+                         </div>
+                       )}
+                    </div>
+                 </motion.div>
+               )}
+             </AnimatePresence>
+           </section>
+
+           {/* Bulk Question Importer */}
+           <section className="bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-3xl p-8 shadow-2xl relative overflow-hidden mb-8">
+             <div className="absolute top-0 left-0 w-1/2 h-full bg-gradient-to-r from-emerald-500/5 to-transparent pointer-events-none" />
+             <div className="flex items-center gap-3 mb-6 relative z-10">
+               <Database className="w-5 h-5 text-emerald-400" />
+               <h2 className="text-lg font-black uppercase tracking-widest text-slate-100">CBT Database Feeder <span className="text-slate-500">(Bulk JSON)</span></h2>
+             </div>
+             <div className="border-2 border-dashed border-emerald-900/50 hover:border-emerald-500/50 bg-black/40 rounded-2xl p-12 flex flex-col items-center justify-center cursor-pointer transition-colors group relative overflow-hidden" onClick={() => jsonInputRef.current?.click()}>
+                <div className="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <UploadCloud className="w-16 h-16 text-emerald-500/50 group-hover:text-emerald-400 mb-6 transition-colors" />
+                <h3 className="text-xl font-bold text-white mb-2">Import Past Questions</h3>
+                <p className="text-slate-500 text-sm font-medium text-center max-w-md mb-2">
+                   Upload a JSON file containing an array of past questions. Automatically chunks and inserts into the database.
+                </p>
+                <button type="button" onClick={(e: any) => { e.stopPropagation(); downloadSampleJson(); }} className="text-emerald-400 hover:text-emerald-300 text-xs font-bold uppercase tracking-widest relative z-20 underline pb-1 cursor-pointer">
+                   Download Sample JSON Format
+                </button>
+                <input type="file" accept=".json" className="hidden" ref={jsonInputRef} onChange={handleJsonUpload} />
+             </div>
+             <AnimatePresence>
+               {(importProgress.length > 0 || isImporting) && (
+                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-6 bg-black border border-white/10 rounded-xl p-4 font-mono text-sm overflow-hidden">
+                    <div className="flex items-center gap-2 text-slate-500 mb-3 border-b border-white/5 pb-2">
+                       <Terminal className="w-4 h-4" /> <span className="uppercase tracking-widest text-xs font-bold">Import Log</span>
+                    </div>
+                    <div className="space-y-2 h-48 overflow-y-auto pr-2 custom-scrollbar">
+                       {importProgress.map((msg, i) => (
+                         <motion.div initial={{ x: -10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} key={i} className={`flex items-start gap-2 ${msg.includes('COMPLETE') ? 'text-emerald-400 font-bold' : msg.includes('ERROR') ? 'text-rose-500 font-bold' : 'text-slate-300'}`}>
+                           <ChevronRight className={`w-4 h-4 flex-shrink-0 mt-0.5 ${msg.includes('ERROR') ? 'text-rose-500' : 'text-emerald-500'}`} />
+                           {msg}
+                         </motion.div>
+                       ))}
+                       {isImporting && (
+                         <div className="flex items-center gap-2 text-emerald-400 animate-pulse mt-2">
+                           <div className="w-1.5 h-3 bg-emerald-500" /> Processing Batch...
                          </div>
                        )}
                     </div>

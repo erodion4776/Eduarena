@@ -915,65 +915,6 @@ async function startServer() {
     res.json(filtered);
   });
 
-  // --- AI Oracle Proxy Route ---
-  app.post("/api/oracle/ask", async (req, res) => {
-    const { prompt, context } = req.body;
-    try {
-      const geminiKey = process.env.GEMINI_API_KEY;
-      if (!geminiKey || geminiKey === 'undefined') {
-        return res.status(400).json({ error: "Gemini Key Missing" });
-      }
-
-      // Dynamic import to avoid top-level issues if SDK is missing
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
-      
-      const fullPrompt = context 
-        ? `Act as Tutor Chuks. The student asked: "${prompt}". Here is the exact textbook paragraph: [${context}]. Use this text to explain the answer using a relatable Nigerian analogy. Be encouraging but firm.`
-        : `Act as Tutor Chuks. The student asked: "${prompt}". You are a brilliant Nigerian tutor. Explain the concept clearly using a relatable analogy.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: fullPrompt,
-      });
-
-      if (response.text) {
-        return res.json({ answer: response.text, provider: 'gemini' });
-      }
-      res.status(500).json({ error: "No response text" });
-    } catch (e) {
-      console.error("Backend Gemini Error:", e);
-      res.status(500).json({ error: "Gemini execution failed" });
-    }
-  });
-
-  // --- AI Embedding Proxy Route ---
-  app.post("/api/oracle/embed", async (req, res) => {
-    const { text } = req.body;
-    try {
-      const geminiKey = process.env.GEMINI_API_KEY;
-      if (!geminiKey || geminiKey === 'undefined') {
-        return res.status(400).json({ error: "Gemini Key Missing" });
-      }
-
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
-      
-      const response = await ai.models.embedContent({
-        model: 'text-embedding-004',
-        contents: text,
-      });
-
-      if (response.embeddings && response.embeddings.length > 0) {
-        return res.json({ embedding: response.embeddings[0].values });
-      }
-      res.status(500).json({ error: "No embeddings returned" });
-    } catch (e) {
-      console.error("Backend Embedding Error:", e);
-      res.status(500).json({ error: "Gemini embedding execution failed" });
-    }
-  });
-
   // --- Arena API Routes ---
   app.get("/api/arena/lobby", (req, res) => {
     const db = getDb();

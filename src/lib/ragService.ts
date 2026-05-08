@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import * as pdfjsLib from 'pdfjs-dist';
+import { GoogleGenAI } from '@google/genai';
 
 // Define worker source for pdf.js using Vite's URL handling
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -66,19 +67,23 @@ export const ragService = {
 
         onProgress(`Processing chunk ${i + 1} of ${chunks.length}...`);
         
-        // Call backend for embedding
-        const embedRes = await fetch('/api/oracle/embed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: chunkTextValue })
+        // Call Gemini for embedding directly
+        const geminiKey = process.env.GEMINI_API_KEY;
+        if (!geminiKey || geminiKey === 'undefined') {
+          throw new Error("Gemini Key Missing");
+        }
+
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await ai.models.embedContent({
+          model: 'gemini-embedding-2-preview',
+          contents: chunkTextValue,
         });
-        
-        if (!embedRes.ok) {
+
+        if (!response.embeddings || response.embeddings.length === 0) {
            throw new Error(`Failed to generate embedding for chunk ${i+1}`);
         }
         
-        const embedData = await embedRes.json();
-        const embedding = embedData.embedding;
+        const embedding = response.embeddings[0].values;
 
         // Insert into document_chunks
         const { error: chunkError } = await supabase
@@ -113,15 +118,19 @@ export const ragService = {
 
     try {
       // 1. Get embedding for the question
-      const embedRes = await fetch('/api/oracle/embed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: question })
+      const geminiKey = process.env.GEMINI_API_KEY;
+      if (!geminiKey || geminiKey === 'undefined') {
+        throw new Error("Gemini Key Missing");
+      }
+
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const response = await ai.models.embedContent({
+        model: 'gemini-embedding-2-preview',
+        contents: question,
       });
-      
-      if (!embedRes.ok) return null;
-      const embedData = await embedRes.json();
-      const queryEmbedding = embedData.embedding;
+
+      if (!response.embeddings || response.embeddings.length === 0) return null;
+      const queryEmbedding = response.embeddings[0].values;
 
       // 2. Call the match_document_chunks RPC in Supabase
       const { data, error } = await supabase.rpc('match_document_chunks', {
