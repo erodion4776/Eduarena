@@ -96,10 +96,10 @@ export const questionImportService = {
           subject_id,
           topic_id,
           question_content: question_content,
-          options: options || [],
+          options: Array.isArray(options) ? options : [options], // Ensure options is an array
           correct_answer: correct_answer,
           explanation: explanation || null,
-          difficulty_level: q.difficulty_level || 1,
+          difficulty_level: typeof q.difficulty_level === 'number' ? q.difficulty_level : parseInt(q.difficulty_level) || 1,
           year: year || null
         });
       }
