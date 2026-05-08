@@ -47,7 +47,7 @@ export const questionImportService = {
            } else {
              // Create missing subject
              onProgress(`Creating missing subject: ${subject_name}`);
-             const { data: newSub, error: nsErr } = await supabase.from('subjects').insert({ name: subject_name, color: 'sky' }).select().single();
+             const { data: newSub, error: nsErr } = await supabase.from('subjects').insert({ name: subject_name }).select().single();
              if (nsErr) throw new Error(`Failed to create subject: ${nsErr.message}`);
              subject_id = newSub.id;
              subjectMap.set(sName, newSub.id);
