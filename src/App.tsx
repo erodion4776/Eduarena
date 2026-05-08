@@ -7,6 +7,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Dashboard from '@/src/pages/Dashboard';
 import AdminPage from '@/src/pages/Admin';
 import AdminArena from '@/src/pages/AdminArena';
+import AlocHarvester from '@/src/pages/AlocHarvester';
 import { Toaster } from '@/components/ui/sonner';
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/admin/arena" element={<AdminArena />} />
+        <Route path="/admin/harvester" element={<AlocHarvester />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
       <Toaster />

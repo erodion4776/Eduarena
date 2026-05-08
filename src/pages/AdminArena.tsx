@@ -207,6 +207,13 @@ export default function AdminArena() {
             <h1 className="font-black tracking-[0.2em] uppercase text-sm">Arena Command</h1>
          </div>
          <div className="flex items-center gap-4">
+            <Button 
+               variant="outline" 
+               className="border-green-500/50 text-green-400 bg-green-500/10 hover:bg-green-500/20 uppercase tracking-widest text-xs font-bold"
+               onClick={() => window.open('/admin/harvester', '_blank')}
+            >
+               Open Data Harvester
+            </Button>
             <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                <span className="text-emerald-400 text-xs font-black uppercase tracking-widest font-mono">System Online</span>
