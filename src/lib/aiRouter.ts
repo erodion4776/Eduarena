@@ -12,77 +12,51 @@ interface AIResponse {
 
 export const aiRouter = {
   async askTutorChuks(prompt: string, context?: string): Promise<AIResponse> {
-    // Basic examination intent detection: Match year and subject keywords
-    const yearMatch = prompt.match(/\b(20\d{2})\b/);
-    const subjectMatch = prompt.toLowerCase().match(/\b(biology|chemistry|physics|mathematics|english)\b/);
-    let dbContext = context;
+    let finalContext = context || "";
 
-    if (supabase && (yearMatch || subjectMatch)) {
-        const year = yearMatch ? parseInt(yearMatch[1]) : null;
-        const subjectName = subjectMatch ? subjectMatch[1] : null;
-
-        let query = supabase.from('questions').select('question_content, options, correct_answer, explanation');
-        
-        if (year) query = query.eq('year', year);
-        
-        if (subjectName && !year) {
-            query = query.ilike('question_content', `%${subjectName}%`);
-        } else if (!year && prompt.length > 10) {
-            // General keyword search if no specific subject/year
-            query = query.textSearch('question_content', prompt.split(' ').join(' & '));
-        }
-
-        const { data: questions } = await query.limit(5);
-        
-        if (questions && questions.length > 0) {
-            dbContext = `Extracted Database Records (Official Past Questions): ` + 
-                questions.map(q => `[Q]: ${q.question_content} | [Options]: ${JSON.stringify(q.options)} | [Key]: ${q.correct_answer}`).join('\n\n');
-        }
-    } else if (supabase && prompt.length > 15) {
-        // Fallback broad search for long queries
-        const { data: searchResults } = await supabase
-            .from('questions')
-            .select('question_content, correct_answer')
-            .ilike('question_content', `%${prompt.substring(0, 20)}%`)
-            .limit(3);
-        
-        if (searchResults && searchResults.length > 0) {
-            dbContext = "Relevant database matches: " + searchResults.map(r => r.question_content).join('; ');
+    // 1. Fetch relevant context from local API if prompt looks like a question or greeting
+    if (!context && prompt.length > 2) {
+        try {
+            const apiRes = await fetch(`/api/ai/query?q=${encodeURIComponent(prompt)}`);
+            const apiData = await apiRes.json();
+            if (apiData.context) {
+                finalContext = apiData.context;
+            }
+        } catch (e) {
+            console.warn("Context API fetch failed", e);
         }
     }
 
-    const fullPrompt = dbContext 
-      ? `Act as Tutor Chuks, a brilliant and concise Nigerian tutor. 
-         USER QUERY: "${prompt}"
-         DATABASE CONTEXT: [${dbContext}]
+    const fullPrompt = finalContext 
+      ? `USER QUERY: "${prompt}"
+         DATABASE CONTEXT: [${finalContext}]
          
-         INSTRUCTIONS:
-         - Answer the query directly using the provided context.
-         - If providing questions, list them clearly.
-         - Use a very brief, smart Nigerian analogy *only* if helpful.
-         - Keep response under 150 words.`
-      : `Act as Tutor Chuks, a brilliant and concise Nigerian tutor.
-         USER QUERY: "${prompt}"
+         Act as Tutor Chuks, a concise Nigerian tutor.
+         - Answer DIRECTLY using the context.
+         - If context is empty, say you don't know the exact past question but explain the general concept.
+         - Keep it under 100 words.`
+      : `USER QUERY: "${prompt}"
          
-         INSTRUCTIONS:
-         - Be polite, helpful, and direct.
-         - Use a brief Nigerian analogy for greetings or general questions.
-         - For greetings (hi, hello), keep it snappy.
-         - Keep response under 100 words.`;
+         Act as Tutor Chuks, a snappy Nigerian tutor.
+         - For greetings, be politely brief.
+         - For general help, give one smart analogy.
+         - No rambling. Under 60 words.`;
+
+    const systemInstruction = "Act as Tutor Chuks, a brilliant but direct Nigerian tutor. Focus strictly on exam success. No long introductory chatter.";
 
     // 1. Attempt Gemini
     try {
       const geminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
       if (geminiKey) {
-        const genAI = new GoogleGenAI({ apiKey: geminiKey });
+        const genAI = new GoogleGenAI(geminiKey);
         const model = genAI.getGenerativeModel({ 
             model: 'gemini-1.5-flash',
-            systemInstruction: "Act as Tutor Chuks, a brilliant but direct Nigerian tutor. Keep answers short and exam-focused."
+            systemInstruction
         });
         const result = await model.generateContent(fullPrompt);
         const response = await result.response;
         const text = response.text();
-        if (text) return { answer: text.trim(), provider: 'gemini' };
+        if (text) return { answer: text.trim(), provider: 'gemini', source: finalContext ? "Exam Bank" : undefined };
       }
     } catch (e) {
       console.warn("Gemini failed, trying Groq...", e);
@@ -94,11 +68,14 @@ export const aiRouter = {
       if (groqKey) {
         const groq = new Groq({ apiKey: groqKey, dangerouslyAllowBrowser: true });
         const chatCompletion = await groq.chat.completions.create({
-          messages: [{ role: "user", content: fullPrompt }],
+          messages: [
+              { role: "system", content: systemInstruction },
+              { role: "user", content: fullPrompt }
+          ],
           model: "llama-3.3-70b-versatile",
         });
         if (chatCompletion.choices[0]?.message?.content) {
-          return { answer: chatCompletion.choices[0].message.content, provider: 'groq' };
+          return { answer: chatCompletion.choices[0].message.content, provider: 'groq', source: finalContext ? "Exam Bank" : undefined };
         }
       }
     } catch (e) {
@@ -112,20 +89,22 @@ export const aiRouter = {
         const hf = new HfInference(hfKey);
         const response = await hf.textGeneration({
           model: 'meta-llama/Llama-3.1-8B-Instruct',
-          inputs: fullPrompt,
-          parameters: { max_new_tokens: 400 }
+          inputs: `<|system|>\n${systemInstruction}<|user|>\n${fullPrompt}<|assistant|>`,
+          parameters: { max_new_tokens: 300 }
         });
         if (response.generated_text) {
-          return { answer: response.generated_text, provider: 'huggingface' };
+          return { answer: response.generated_text.trim(), provider: 'huggingface', source: finalContext ? "Exam Bank" : undefined };
         }
       }
     } catch (e) {
       console.error("All AI providers failed:", e);
     }
 
-    // Final fallback
+    // Final fallback (Keep it short as requested)
     return {
-      answer: `Ah Boss, networking is acting up! But based on what I know: ${dbContext?.substring(0, 50) || 'we are on it'}. Try again in a second, we'll conquer this!`,
+      answer: finalContext 
+        ? `Boss, the bank says: ${finalContext.substring(0, 100)}... Let's use this for now!`
+        : `Ah ah, we are on it! Just keep pushing, we'll conquer. Ask me something specific about JAMB or Biology!`,
       provider: 'simulated'
     };
 

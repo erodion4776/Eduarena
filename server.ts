@@ -16,6 +16,27 @@ const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || "eduarena-secret-key-123";
 const DB_FILE = path.join(__dirname, "db.json");
 
+// Load hardcoded questions
+const hardcodedQuestionsRaw = JSON.parse(fs.readFileSync(path.join(__dirname, "src/data/questions.json"), "utf8"));
+const hardcodedQuestions = hardcodedQuestionsRaw.map((q: any) => ({
+    id: `hc-${q.id}`,
+    exam_type: q.examtype?.toUpperCase() || "JAMB",
+    year: parseInt(q.examyear) || 2024,
+    subject_id: q.subject === "Biology" ? "s2" : "s5", // Simple mapping
+    topic_id: q.subject === "Biology" ? "t1" : "t7",
+    question_text: q.question.replace(/<[^>]*>?/gm, ''), // Remove HTML
+    options: {
+        A: q.option.a,
+        B: q.option.b,
+        C: q.option.c,
+        D: q.option.d
+    },
+    correct_option: q.answer?.toUpperCase(),
+    explanation: q.solution || "This is a past exam question.",
+    difficulty_level: 5,
+    created_at: new Date().toISOString()
+}));
+
 // Initial DB state
 const initialDb = {
   users: [],
@@ -41,6 +62,7 @@ const initialDb = {
     { id: "t7", subject_id: "s5", name: "Lexis and Structure", syllabus_description: "Vocabulary usage, sentence structure and grammar." }
   ],
   pastQuestions: [
+    ...hardcodedQuestions,
     {
       id: "pq1",
       exam_type: "JAMB",
@@ -326,6 +348,29 @@ async function startServer() {
   app.post("/api/auth/logout", (req, res) => {
     res.clearCookie("token");
     res.json({ success: true });
+  });
+
+  // --- AI Context Search ---
+  app.get("/api/ai/query", (req, res) => {
+    const { q } = req.query;
+    const db = getDb();
+    const queryStr = String(q).toLowerCase();
+    
+    // Find relevant questions or answers
+    const matches = db.pastQuestions.filter((pq: any) => 
+        pq.question_text.toLowerCase().includes(queryStr) ||
+        (pq.explanation && pq.explanation.toLowerCase().includes(queryStr)) ||
+        (pq.year && String(pq.year).includes(queryStr))
+    ).slice(0, 5);
+
+    if (matches.length > 0) {
+        const context = matches.map((m: any) => 
+            `[EXAM: ${m.exam_type || 'UTME'} ${m.year}] Q: ${m.question_text}. Options: ${JSON.stringify(m.options)}. Answer: ${m.correct_option}. Explanation: ${m.explanation}`
+        ).join("\n\n");
+        return res.json({ context });
+    }
+
+    res.json({ context: "" });
   });
 
   // --- Knowledge Hub Routes ---

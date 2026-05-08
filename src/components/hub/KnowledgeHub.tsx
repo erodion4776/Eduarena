@@ -19,36 +19,38 @@ export default function KnowledgeHub({ onSelectCourse, onSelectQuestion }: any) 
   }, []);
 
   const fetchData = async () => {
-      if (!supabase) return;
-      
       // Fetch subjects as "courses"
-      const { data: subData } = await supabase.from('subjects').select('*');
-      if (subData) {
-          setCourses(subData.map(s => ({
-              id: s.id,
-              subject: s.name,
-              title: `Mastering ${s.name}`,
-              description: `Comprehensive study guide and practice for ${s.name}.`
-          })) as any);
-      }
+      try {
+        const subRes = await fetch('/api/admin/subjects');
+        const subData = await subRes.json();
+        if (subData) {
+            setCourses(subData.map((s: any) => ({
+                id: s.id,
+                subject: s.name,
+                title: `Mastering ${s.name}`,
+                description: `Comprehensive study guide and practice for ${s.name}.`
+            })) as any);
+        }
+      } catch(e) { console.error(e); }
 
-      // Fetch sample questions
-      const { data: qData } = await supabase.from('questions').select('*').limit(20);
-      if (qData) setQuestions(qData);
+      // Fetch sample questions from the new oracle search endpoint
+      try {
+        const qRes = await fetch('/api/oracle/search?limit=20');
+        const qData = await qRes.json();
+        if (qData.questions) setQuestions(qData.questions);
+      } catch(e) { console.error(e); }
   };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) return;
-
-    const { data } = await supabase
-        .from('questions')
-        .select('*')
-        .ilike('question_content', `%${search}%`)
-        .limit(20);
     
-    if (data) setQuestions(data);
-    setActiveTab('questions');
+    try {
+        // Use the admin questions search which handles text better
+        const res = await fetch(`/api/admin/questions?search=${encodeURIComponent(search)}&limit=20`);
+        const data = await res.json();
+        if (data.questions) setQuestions(data.questions);
+        setActiveTab('questions');
+    } catch(e) { console.error(e); }
   };
 
   return (
