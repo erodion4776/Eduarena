@@ -1,6 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 let aiInstance: GoogleGenAI | null = null;
+const PRIMARY_MODEL = "gemini-3-flash-preview";
+const FALLBACK_MODEL = "gemini-3-pro-preview"; // Assuming pro is available as a higher tier fallback
 
 function getAI() {
   if (!aiInstance) {
@@ -12,6 +14,29 @@ function getAI() {
     aiInstance = new GoogleGenAI({ apiKey });
   }
   return aiInstance;
+}
+
+async function callWithRetry(prompt: string, config: any, retries = 2): Promise<any> {
+    const ai = getAI();
+    if (!ai) throw new Error("AI services unavailable");
+
+    for (let i = 0; i <= retries; i++) {
+        const modelName = i === 0 ? PRIMARY_MODEL : FALLBACK_MODEL;
+        try {
+            return await ai.models.generateContent({
+                model: modelName,
+                contents: prompt,
+                config: {
+                    ...config,
+                    // If token limit is hit, we might need a longer context/output window, 
+                    // though for simple generation, increasing retries is all we can do here.
+                }
+            });
+        } catch (error) {
+            console.error(`Attempt ${i+1} failed with ${modelName}:`, error);
+            if (i === retries) throw error;
+        }
+    }
 }
 
 export async function generateTutorial(topic: string, subject: string, pastQuestions: any[]) {
@@ -33,22 +58,18 @@ export async function generateTutorial(topic: string, subject: string, pastQuest
 
     Format the output in Markdown with clear, bold headings for "The Essence" and "How they test this".
   `;
-
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: prompt,
-    config: {
-      systemInstruction: "You are the 'Exam Oracle' AI Tutor. Your writing style is encouraging but rigorous, focusing strictly on exam success.",
-    }
-  });
-
-  return response.text;
+  
+  try {
+      const response = await callWithRetry(prompt, {
+        systemInstruction: "You are the 'Exam Oracle' AI Tutor. Your writing style is encouraging but rigorous, focusing strictly on exam success.",
+      });
+      return response.text;
+  } catch (error) {
+      return "AI service failed after retries. Please try again.";
+  }
 }
 
 export async function generateMockQuestions(topic: string, subject: string, count: number = 5) {
-  const ai = getAI();
-  if (!ai) return [];
-  
   const prompt = `
     Generate ${count} highly realistic mock exam questions for the topic: ${topic} in ${subject}.
     Include a mix of actual past-paper-style logic and "predicted" questions for the 2025 exams.
@@ -66,10 +87,8 @@ export async function generateMockQuestions(topic: string, subject: string, coun
     ]
   `;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: prompt,
-    config: {
+  try {
+    const response = await callWithRetry(prompt, {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.ARRAY,
@@ -86,10 +105,8 @@ export async function generateMockQuestions(topic: string, subject: string, coun
           required: ["question", "options", "correct_answer", "explanation", "difficulty", "is_predicted_2025"]
         }
       }
-    }
-  });
+    });
 
-  try {
     return JSON.parse(response.text || "[]");
   } catch (e) {
     console.error("Failed to parse AI mock questions", e);
@@ -98,9 +115,6 @@ export async function generateMockQuestions(topic: string, subject: string, coun
 }
 
 export async function generatePredictionInsight(subject: string, results: any[]) {
-  const ai = getAI();
-  if (!ai) return null;
-  
   const prompt = `
     Based on the following student performance results: ${JSON.stringify(results)}
     And historical data for ${subject} exams (JAMB/WAEC/NECO).
@@ -117,10 +131,8 @@ export async function generatePredictionInsight(subject: string, results: any[])
     }
   `;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: prompt,
-    config: {
+  try {
+    const response = await callWithRetry(prompt, {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -131,10 +143,8 @@ export async function generatePredictionInsight(subject: string, results: any[])
         },
         required: ["predicted_topics", "correction_breakdown", "confidence_score"]
       }
-    }
-  });
+    });
 
-  try {
     return JSON.parse(response.text || "{}");
   } catch (e) {
     console.error("Failed to parse AI prediction insight", e);

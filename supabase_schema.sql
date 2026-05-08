@@ -7,7 +7,7 @@ create extension if not exists vector;
 create table public.subjects (
   id uuid default gen_random_uuid() primary key,
   name text not null,
-  category text not null,
+  category text not null default 'General',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
