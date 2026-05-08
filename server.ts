@@ -947,6 +947,33 @@ async function startServer() {
     }
   });
 
+  // --- AI Embedding Proxy Route ---
+  app.post("/api/oracle/embed", async (req, res) => {
+    const { text } = req.body;
+    try {
+      const geminiKey = process.env.GEMINI_API_KEY;
+      if (!geminiKey || geminiKey === 'undefined') {
+        return res.status(400).json({ error: "Gemini Key Missing" });
+      }
+
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      
+      const response = await ai.models.embedContent({
+        model: 'text-embedding-004',
+        contents: text,
+      });
+
+      if (response.embeddings && response.embeddings.length > 0) {
+        return res.json({ embedding: response.embeddings[0].values });
+      }
+      res.status(500).json({ error: "No embeddings returned" });
+    } catch (e) {
+      console.error("Backend Embedding Error:", e);
+      res.status(500).json({ error: "Gemini embedding execution failed" });
+    }
+  });
+
   // --- Arena API Routes ---
   app.get("/api/arena/lobby", (req, res) => {
     const db = getDb();

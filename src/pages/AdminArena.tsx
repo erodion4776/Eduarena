@@ -27,6 +27,8 @@ export default function AdminArena() {
   // RAG State
   const [uploadProgress, setUploadProgress] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadSubject, setUploadSubject] = useState('Biology');
+  const [uploadTopic, setUploadTopic] = useState('General');
   
   // Simulator State
   const [simQuery, setSimQuery] = useState('');
@@ -53,13 +55,15 @@ export default function AdminArena() {
     setIsUploading(true);
     setUploadProgress([]);
     
-    await ragService.processPDFToVectors(file, (msg) => {
-      setUploadProgress(prev => [...prev, msg]);
-    });
-
-    setTimeout(() => {
+    try {
+      await ragService.processPDFToVectors(file, uploadSubject, uploadTopic, (msg) => {
+        setUploadProgress(prev => [...prev, msg]);
+      });
+    } catch (e: any) {
+      console.error(e);
+    } finally {
       setIsUploading(false);
-    }, 2000);
+    }
   };
 
   const handleSimulate = async (e: React.FormEvent) => {
@@ -158,6 +162,27 @@ export default function AdminArena() {
              <div className="flex items-center gap-3 mb-6 relative z-10">
                <Database className="w-5 h-5 text-rose-400" />
                <h2 className="text-lg font-black uppercase tracking-widest text-slate-100">Neural Feeder <span className="text-slate-500">(PDF Ingestion)</span></h2>
+             </div>
+
+             <div className="grid grid-cols-2 gap-4 mb-6 relative z-10">
+               <div>
+                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Subject</label>
+                 <Input 
+                   value={uploadSubject} 
+                   onChange={(e) => setUploadSubject(e.target.value)} 
+                   placeholder="e.g. Biology"
+                   className="bg-black/40 border-white/10 text-white"
+                 />
+               </div>
+               <div>
+                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Topic</label>
+                 <Input 
+                   value={uploadTopic} 
+                   onChange={(e) => setUploadTopic(e.target.value)} 
+                   placeholder="e.g. Photosynthesis"
+                   className="bg-black/40 border-white/10 text-white"
+                 />
+               </div>
              </div>
 
              <div 
