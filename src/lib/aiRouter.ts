@@ -2,6 +2,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { Groq } from 'groq-sdk';
 import { HfInference } from '@huggingface/inference';
+import { supabase } from './supabase';
 
 interface AIResponse {
   answer: string;
@@ -11,18 +12,39 @@ interface AIResponse {
 
 export const aiRouter = {
   async askTutorChuks(prompt: string, context?: string): Promise<AIResponse> {
-    const fullPrompt = context 
+    // Basic examination intent detection
+    const biology2010Match = prompt.toLowerCase().match(/(2010|2011|2012).*biology/);
+    let dbContext = context;
+
+    if (biology2010Match) {
+        const year = parseInt(biology2010Match[1]);
+        const { data: questions, error } = await supabase
+            .from('questions_bank')
+            .select('question_content, options, correct_option')
+            .eq('year', year)
+            // Just assume a broad subject filter or none for now, 
+            // since filtering by subject requires subject_id lookup.
+            .limit(3);
+        
+        if (questions && questions.length > 0) {
+            dbContext = `Here are some extracted questions from Biology ${year}: ` + 
+                questions.map(q => `${q.question_content} Options: ${JSON.stringify(q.options)}. Answer: ${q.correct_option}`).join('\n');
+        }
+    }
+
+    const fullPrompt = dbContext 
       ? `Act as Tutor Chuks, a brilliant Nigerian tutor. The student asked: "${prompt}".
-         Use the provided textbook context to explain the answer.
+         Use the provided database context to answer directly.
          Guidelines:
          - Be polite, direct, and helpful.
-         - Use a very brief, smart Nigerian analogy *only* if it clarifies the concept. No rambling.
+         - Show the questions clearly if providing past exam data.
+         - If providing answers, explain them simply using a relatable Nigerian analogy.
          - Keep answers concise and exam-focused.
-         Textbook Context: [${context}]`
+         Database Context: [${dbContext}]`
       : `Act as Tutor Chuks, a brilliant Nigerian tutor. The student asked: "${prompt}".
          Guidelines:
          - Be polite, direct, and helpful.
-         - If the request is for specific past questions, provide them clearly in a short, structured list or direct response.
+         - If the request is for specific past questions, try to be general until they provide exam details.
          - Keep answers concise and exam-focused.
          - Use a brief, smart Nigerian analogy *only* if it helps clarify the point.`;
 
