@@ -12,49 +12,71 @@ interface AIResponse {
 
 export const aiRouter = {
   async askTutorChuks(prompt: string, context?: string): Promise<AIResponse> {
-    // Basic examination intent detection
-    const biology2010Match = prompt.toLowerCase().match(/(2010|2011|2012).*biology/);
+    // Basic examination intent detection: Match year and subject keywords
+    const yearMatch = prompt.match(/\b(20\d{2})\b/);
+    const subjectMatch = prompt.toLowerCase().match(/\b(biology|chemistry|physics|mathematics|english)\b/);
     let dbContext = context;
 
-    if (biology2010Match) {
-        const year = parseInt(biology2010Match[1]);
-        const { data: questions, error } = await supabase
-            .from('questions_bank')
-            .select('question_content, options, correct_option')
-            .eq('year', year)
-            // Just assume a broad subject filter or none for now, 
-            // since filtering by subject requires subject_id lookup.
-            .limit(3);
+    if (supabase && (yearMatch || subjectMatch)) {
+        const year = yearMatch ? parseInt(yearMatch[1]) : null;
+        const subjectName = subjectMatch ? subjectMatch[1] : null;
+
+        let query = supabase.from('questions').select('question_content, options, correct_answer, explanation');
+        
+        if (year) query = query.eq('year', year);
+        
+        if (subjectName && !year) {
+            query = query.ilike('question_content', `%${subjectName}%`);
+        } else if (!year && prompt.length > 10) {
+            // General keyword search if no specific subject/year
+            query = query.textSearch('question_content', prompt.split(' ').join(' & '));
+        }
+
+        const { data: questions } = await query.limit(5);
         
         if (questions && questions.length > 0) {
-            dbContext = `Here are some extracted questions from Biology ${year}: ` + 
-                questions.map(q => `${q.question_content} Options: ${JSON.stringify(q.options)}. Answer: ${q.correct_option}`).join('\n');
+            dbContext = `Extracted Database Records (Official Past Questions): ` + 
+                questions.map(q => `[Q]: ${q.question_content} | [Options]: ${JSON.stringify(q.options)} | [Key]: ${q.correct_answer}`).join('\n\n');
+        }
+    } else if (supabase && prompt.length > 15) {
+        // Fallback broad search for long queries
+        const { data: searchResults } = await supabase
+            .from('questions')
+            .select('question_content, correct_answer')
+            .ilike('question_content', `%${prompt.substring(0, 20)}%`)
+            .limit(3);
+        
+        if (searchResults && searchResults.length > 0) {
+            dbContext = "Relevant database matches: " + searchResults.map(r => r.question_content).join('; ');
         }
     }
 
     const fullPrompt = dbContext 
-      ? `Act as Tutor Chuks, a brilliant Nigerian tutor. The student asked: "${prompt}".
-         Use the provided database context to answer directly.
-         Guidelines:
-         - Be polite, direct, and helpful.
-         - Show the questions clearly if providing past exam data.
-         - If providing answers, explain them simply using a relatable Nigerian analogy.
-         - Keep answers concise and exam-focused.
-         Database Context: [${dbContext}]`
-      : `Act as Tutor Chuks, a brilliant Nigerian tutor. The student asked: "${prompt}".
-         Guidelines:
-         - Be polite, direct, and helpful.
-         - If the request is for specific past questions, try to be general until they provide exam details.
-         - Keep answers concise and exam-focused.
-         - Use a brief, smart Nigerian analogy *only* if it helps clarify the point.`;
+      ? `Act as Tutor Chuks, a brilliant and concise Nigerian tutor. 
+         USER QUERY: "${prompt}"
+         DATABASE CONTEXT: [${dbContext}]
+         
+         INSTRUCTIONS:
+         - Answer the query directly using the provided context.
+         - If providing questions, list them clearly.
+         - Use a very brief, smart Nigerian analogy *only* if helpful.
+         - Keep response under 150 words.`
+      : `Act as Tutor Chuks, a brilliant and concise Nigerian tutor.
+         USER QUERY: "${prompt}"
+         
+         INSTRUCTIONS:
+         - Be polite, helpful, and direct.
+         - Use a brief Nigerian analogy for greetings or general questions.
+         - For greetings (hi, hello), keep it snappy.
+         - Keep response under 100 words.`;
 
     // 1. Attempt Gemini
     try {
-      const geminiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
+      const geminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
       if (geminiKey) {
         const ai = new GoogleGenAI({ apiKey: geminiKey });
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-1.5-flash',
           contents: fullPrompt,
         });
         if (response.text) return { answer: response.text, provider: 'gemini' };
@@ -65,7 +87,7 @@ export const aiRouter = {
 
     // 2. Fallback to Groq
     try {
-      const groqKey = import.meta.env.VITE_GROK_API_KEY;
+      const groqKey = (import.meta as any).env.VITE_GROK_API_KEY;
       if (groqKey) {
         const groq = new Groq({ apiKey: groqKey, dangerouslyAllowBrowser: true });
         const chatCompletion = await groq.chat.completions.create({
@@ -82,13 +104,13 @@ export const aiRouter = {
 
     // 3. Fallback to Hugging Face
     try {
-      const hfKey = import.meta.env.VITE_HF_API_KEY;
+      const hfKey = (import.meta as any).env.VITE_HF_API_KEY;
       if (hfKey) {
         const hf = new HfInference(hfKey);
         const response = await hf.textGeneration({
           model: 'meta-llama/Llama-3.1-8B-Instruct',
           inputs: fullPrompt,
-          parameters: { max_new_tokens: 500 }
+          parameters: { max_new_tokens: 400 }
         });
         if (response.generated_text) {
           return { answer: response.generated_text, provider: 'huggingface' };
@@ -100,9 +122,10 @@ export const aiRouter = {
 
     // Final fallback
     return {
-      answer: `Ah ah, Boss! I hear you. The textbook states: "${context || 'It is an important concept'}". Think of it like making correct Jollof rice — if the base is wrong, everything is wrong. Don't worry, we'll fix it!`,
+      answer: `Ah Boss, networking is acting up! But based on what I know: ${dbContext?.substring(0, 50) || 'we are on it'}. Try again in a second, we'll conquer this!`,
       provider: 'simulated'
     };
+
   },
 
   async getIntervention(topic: string): Promise<AIResponse> {

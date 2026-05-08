@@ -5,24 +5,49 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Search, Book, Play, HelpCircle, Filter, ChevronRight, Bookmark } from 'lucide-react';
 import { useThemeStore } from '@/src/store/useThemeStore';
+import { supabase } from '@/src/lib/supabase';
 
 export default function KnowledgeHub({ onSelectCourse, onSelectQuestion }: any) {
   const { mode } = useThemeStore();
   const [search, setSearch] = useState('');
   const [courses, setCourses] = useState([]);
-  const [questions, setQuestions] = useState([]);
+  const [questions, setQuestions] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'courses' | 'questions'>('courses');
 
   useEffect(() => {
-    fetch('/api/courses').then(res => res.json()).then(setCourses);
-    fetch('/api/questions').then(res => res.json()).then(setQuestions);
+    fetchData();
   }, []);
+
+  const fetchData = async () => {
+      if (!supabase) return;
+      
+      // Fetch subjects as "courses"
+      const { data: subData } = await supabase.from('subjects').select('*');
+      if (subData) {
+          setCourses(subData.map(s => ({
+              id: s.id,
+              subject: s.name,
+              title: `Mastering ${s.name}`,
+              description: `Comprehensive study guide and practice for ${s.name}.`
+          })) as any);
+      }
+
+      // Fetch sample questions
+      const { data: qData } = await supabase.from('questions').select('*').limit(20);
+      if (qData) setQuestions(qData);
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch(`/api/questions?search=${search}`);
-    const data = await res.json();
-    setQuestions(data);
+    if (!supabase) return;
+
+    const { data } = await supabase
+        .from('questions')
+        .select('*')
+        .ilike('question_content', `%${search}%`)
+        .limit(20);
+    
+    if (data) setQuestions(data);
     setActiveTab('questions');
   };
 
@@ -105,12 +130,12 @@ export default function KnowledgeHub({ onSelectCourse, onSelectQuestion }: any) 
                 </div>
                 <div className="flex-1 space-y-2">
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-[10px] font-black uppercase tracking-widest">{q.exam_type}</Badge>
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{q.subject}</span>
+                    <Badge variant="secondary" className="text-[10px] font-black uppercase tracking-widest">{q.exam_type || 'EXAM'}</Badge>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{q.year}</span>
                   </div>
-                  <h3 className="text-lg font-bold text-slate-900 leading-snug">{q.question_text}</h3>
+                  <h3 className="text-lg font-bold text-slate-900 leading-snug">{q.question_content}</h3>
                   <div className="flex items-center gap-4 pt-2">
-                    <span className="text-xs font-bold text-slate-400">Difficulty: <span className="text-blue-600">{q.difficulty}</span></span>
+                    <span className="text-xs font-bold text-slate-400">Difficulty: <span className="text-blue-600">{q.difficulty_level}</span></span>
                     <Button variant="ghost" size="sm" className="h-8 text-slate-400 hover:text-blue-600">
                       <Bookmark className="w-4 h-4 mr-1" /> Save
                     </Button>

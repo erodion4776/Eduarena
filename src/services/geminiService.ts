@@ -1,12 +1,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 let aiInstance: GoogleGenAI | null = null;
-const PRIMARY_MODEL = "gemini-3-flash-preview";
-const FALLBACK_MODEL = "gemini-3-pro-preview"; // Assuming pro is available as a higher tier fallback
+const PRIMARY_MODEL = "gemini-1.5-flash";
+const FALLBACK_MODEL = "gemini-1.5-pro"; // Assuming pro is available as a higher tier fallback
 
 function getAI() {
   if (!aiInstance) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
     if (!apiKey || apiKey === 'undefined') {
       console.warn('GEMINI_API_KEY is not defined. AI features will be disabled.');
       return null;
