@@ -19,8 +19,16 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  isLoading: true,
+  user: {
+    id: '1',
+    name: 'Guest Scholar',
+    email: 'guest@eduarena.local',
+    role: 'admin',
+    points: 1500,
+    level: 5,
+    school_id: 'school_1'
+  },
+  isLoading: false,
   setUser: (user) => set({ user }),
   setLoading: (isLoading) => set({ isLoading }),
   logout: async () => {

@@ -14,7 +14,7 @@ export const aiRouter = {
 
     // 1. Try Gemini
     try {
-      const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      const geminiKey = process.env.GEMINI_API_KEY;
       if (geminiKey && geminiKey !== 'undefined') {
         const ai = new GoogleGenAI({ apiKey: geminiKey });
         const response = await ai.models.generateContent({
@@ -33,7 +33,7 @@ export const aiRouter = {
 
     // 2. Try Grok (Fallback 1)
     try {
-      const grokKey = import.meta.env.VITE_GROK_API_KEY;
+      const grokKey = process.env.VITE_GROK_API_KEY;
       if (grokKey && grokKey !== 'undefined') {
         // Simulate Grok API call layout
         const res = await fetch('https://api.x.ai/v1/chat/completions', {
@@ -61,7 +61,7 @@ export const aiRouter = {
 
     // 3. Try Hugging Face (Fallback 2)
     try {
-      const hfKey = import.meta.env.VITE_HF_API_KEY;
+      const hfKey = process.env.VITE_HF_API_KEY;
       if (hfKey && hfKey !== 'undefined') {
         const res = await fetch('https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2', {
           method: 'POST',
