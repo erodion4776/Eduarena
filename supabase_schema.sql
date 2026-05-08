@@ -102,11 +102,20 @@ alter table public.document_chunks enable row level security;
 drop policy if exists "Allow public read access to subjects" on public.subjects;
 create policy "Allow public read access to subjects" on public.subjects for select using (true);
 
+drop policy if exists "Allow public insert to subjects" on public.subjects;
+create policy "Allow public insert to subjects" on public.subjects for insert with check (true);
+
 drop policy if exists "Allow public read access to topics" on public.topics;
 create policy "Allow public read access to topics" on public.topics for select using (true);
 
+drop policy if exists "Allow public insert to topics" on public.topics;
+create policy "Allow public insert to topics" on public.topics for insert with check (true);
+
 drop policy if exists "Allow public read access to questions" on public.questions;
 create policy "Allow public read access to questions" on public.questions for select using (true);
+
+drop policy if exists "Allow public insert to questions" on public.questions;
+create policy "Allow public insert to questions" on public.questions for insert with check (true);
 
 drop policy if exists "Allow public read access to document_chunks" on public.document_chunks;
 create policy "Allow public read access to document_chunks" on public.document_chunks for select using (true);

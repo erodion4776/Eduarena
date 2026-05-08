@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Download, Play, Square, Terminal as TerminalIcon } from 'lucide-react';
+import { Download, Play, Square, Terminal as TerminalIcon, Database } from 'lucide-react';
+import { questionImportService } from '@/src/lib/questionImportService';
 
 export default function AlocHarvester() {
   const [token, setToken] = useState('');
@@ -8,6 +9,7 @@ export default function AlocHarvester() {
   const [requestCount, setRequestCount] = useState(100);
   
   const [isHarvesting, setIsHarvesting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [harvestedQuestions, setHarvestedQuestions] = useState<any[]>([]);
   const [logs, setLogs] = useState<{ id: number; text: string; type: 'info' | 'error' | 'success' }[]>([]);
   
@@ -67,7 +69,11 @@ export default function AlocHarvester() {
 
         const data = await res.json();
         if (data && data.data) {
-          items.push(data.data);
+          if (Array.isArray(data.data)) {
+            items.push(...data.data);
+          } else {
+            items.push(data.data);
+          }
           addLog(`[SYS] Fetching ${examType} ${subject} - Request ${i}/${requestCount}... SUCCESS! Total Vault: ${items.length}`, "success");
         } else {
           addLog(`[WARN] No data struct returned on request ${i}.`, "error");
@@ -83,6 +89,18 @@ export default function AlocHarvester() {
     setHarvestedQuestions(items);
     setIsHarvesting(false);
     addLog(`[END] Harvest complete. Total accumulated: ${items.length} questions.`, "info");
+  };
+
+  const saveToDatabase = async () => {
+    setIsSaving(true);
+    addLog(`[DB] Starting insertion of ${harvestedQuestions.length} questions...`, "info");
+    try {
+        await questionImportService.importQuestionsBatch(harvestedQuestions, (msg) => addLog(`[DB] ${msg}`, 'info'));
+    } catch (err: any) {
+        addLog(`[DB-ERR] ${err.message}`, "error");
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   const stopHarvest = () => {
@@ -230,13 +248,23 @@ export default function AlocHarvester() {
 
         {/* EXPORT ACTION */}
         {(!isHarvesting && harvestedQuestions.length > 0) && (
-          <button 
-            onClick={downloadJson}
-            className="w-full flex items-center justify-center gap-3 bg-green-500 hover:bg-green-400 text-black p-4 rounded-lg font-black uppercase tracking-widest shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all"
-          >
-            <Download className="w-6 h-6" />
-            DOWNLOAD JSON VAULT ({harvestedQuestions.length} ITEMS)
-          </button>
+          <div className="flex gap-4">
+            <button 
+                onClick={saveToDatabase}
+                disabled={isSaving}
+                className="flex-1 flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white p-4 rounded-lg font-black uppercase tracking-widest shadow-[0_0_20px_rgba(5,150,105,0.4)] transition-all disabled:opacity-50"
+            >
+                <Database className="w-6 h-6" />
+                {isSaving ? 'SAVING...' : `SAVE TO DATABASE (${harvestedQuestions.length} ITEMS)`}
+            </button>
+            <button 
+                onClick={downloadJson}
+                className="flex-[0.5] flex items-center justify-center gap-3 bg-green-500 hover:bg-green-400 text-black p-4 rounded-lg font-black uppercase tracking-widest shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all"
+            >
+                <Download className="w-6 h-6" />
+                JSON
+            </button>
+          </div>
         )}
 
       </div>
