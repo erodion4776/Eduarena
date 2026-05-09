@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Terminal, Shield, Database, Download, AlertCircle, Play, Save, Settings, Hash, Layers, Cloud, Zap, RefreshCw } from 'lucide-react';
 import initSqlJs from 'sql.js';
@@ -177,7 +177,7 @@ export default function DataHarvester() {
                 <Terminal className={`w-8 h-8 ${isHarvesting ? 'text-red-500' : 'text-[#00FF41]'}`} />
               </div>
               <div>
-                <h1 className="text-3xl font-black italic tracking-tighter uppercase whitespace-nowrap">Extraction_Core <span className="text-white">v2.0</span></h1>
+                <h1 className="text-3xl font-black italic tracking-tighter uppercase whitespace-nowrap">ALOC_Harvester <span className="text-white">v2.0.0</span></h1>
                 <div className="flex items-center gap-3 mt-1">
                    <Badge variant="outline" className="border-[#00FF41]/40 text-[#00FF41] rounded-none text-[8px] tracking-widest font-black uppercase">Secure Shell Active</Badge>
                    {isHarvesting && <span className="text-[10px] text-red-500 font-black animate-pulse">[ HARVEST_ENGAGED ]</span>}
