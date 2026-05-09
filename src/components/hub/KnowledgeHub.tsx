@@ -1,154 +1,283 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import React, { useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Search, Book, Play, HelpCircle, Filter, ChevronRight, Bookmark } from 'lucide-react';
+import { Search, HelpCircle, ChevronRight, MessageSquare, Brain, Eye, EyeOff, Filter, BookOpen } from 'lucide-react';
 import { useThemeStore } from '@/src/store/useThemeStore';
-import { supabase } from '@/src/lib/supabase';
+import { useAIStore } from '@/src/store/useAIStore';
+import { getGroupedQuestions, ENGLISH_ARCHIVE, JambQuestion } from '@/src/data/englishArchive';
 
-export default function KnowledgeHub({ onSelectCourse, onSelectQuestion }: any) {
+export default function KnowledgeHub() {
   const { mode } = useThemeStore();
+  const { toggleChat, addMessage, isChatOpen } = useAIStore();
   const [search, setSearch] = useState('');
-  const [courses, setCourses] = useState([]);
-  const [questions, setQuestions] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'courses' | 'questions'>('courses');
+  const [selectedYear, setSelectedYear] = useState<string | 'All'>('All');
+  const [revealedAnswers, setRevealedAnswers] = useState<Record<number, boolean>>({});
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const groupedData = useMemo(() => getGroupedQuestions(), []);
+  const allYears = useMemo(() => ['All', ...groupedData.map(g => g.year)], [groupedData]);
 
-  const fetchData = async () => {
-      // Fetch subjects as "courses"
-      try {
-        const subRes = await fetch('/api/admin/subjects');
-        const subData = await subRes.json();
-        if (subData) {
-            setCourses(subData.map((s: any) => ({
-                id: s.id,
-                subject: s.name,
-                title: `Mastering ${s.name}`,
-                description: `Comprehensive study guide and practice for ${s.name}.`
-            })) as any);
-        }
-      } catch(e) { console.error(e); }
+  const filteredQuestions = useMemo(() => {
+    let results = ENGLISH_ARCHIVE;
 
-      // Fetch sample questions from the new oracle search endpoint
-      try {
-        const qRes = await fetch('/api/oracle/search?limit=20');
-        const qData = await qRes.json();
-        if (qData.questions) setQuestions(qData.questions);
-      } catch(e) { console.error(e); }
+    if (selectedYear !== 'All') {
+      results = results.filter(q => q.examyear === selectedYear);
+    }
+
+    if (search.trim()) {
+      const query = search.toLowerCase();
+      results = results.filter(q => 
+        q.question.toLowerCase().includes(query) ||
+        q.section.toLowerCase().includes(query)
+      );
+    }
+
+    return results;
+  }, [search, selectedYear]);
+
+  const toggleReveal = (id: number) => {
+    setRevealedAnswers(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    try {
-        // Use the admin questions search which handles text better
-        const res = await fetch(`/api/admin/questions?search=${encodeURIComponent(search)}&limit=20`);
-        const data = await res.json();
-        if (data.questions) setQuestions(data.questions);
-        setActiveTab('questions');
-    } catch(e) { console.error(e); }
+  const discussWithTutor = (q: JambQuestion) => {
+    const text = `Tutor Chuks, explain question ${q.id} from the ${q.examyear} exam. It asks about: "${q.question.replace(/<[^>]*>?/gm, '')}"`;
+    addMessage({
+      id: Date.now().toString(),
+      sender: 'student',
+      text,
+      timestamp: Date.now()
+    });
+    if (!isChatOpen) toggleChat();
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-8 animate-in fade-in duration-700">
-      <header className="space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className={`text-4xl font-black tracking-tight ${mode === 'arena' ? 'text-green-500' : 'text-slate-900'}`}>
-              Knowledge Hub
-            </h1>
-            <p className="text-slate-500 text-lg">Your central engine for learning and practice.</p>
+    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+      {/* Sidebar: Year Filter */}
+      <aside className="w-64 border-r border-cyan-500/20 bg-slate-900/50 backdrop-blur-xl p-6 flex flex-col gap-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center border border-cyan-500/40">
+            <BookOpen className="w-6 h-6 text-cyan-400" />
           </div>
-          <div className="flex gap-2">
-            <Badge variant="outline" className="px-4 py-1 border-blue-200 text-blue-600">JAMB 2026</Badge>
-            <Badge variant="outline" className="px-4 py-1 border-green-200 text-green-600">WAEC 2026</Badge>
-          </div>
+          <h2 className="text-xl font-bold tracking-tight text-white">Archives</h2>
         </div>
 
-        <form onSubmit={handleSearch} className="relative group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
-          <Input 
-            placeholder="Search for topics, questions, or subjects (e.g. 'Calculus', 'Photosynthesis')..." 
-            className="pl-12 py-8 text-lg rounded-2xl border-2 border-slate-100 focus:border-blue-600 transition-all shadow-sm"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 hover:bg-blue-700 rounded-xl px-6">
-            Search
-          </Button>
-        </form>
-      </header>
+        <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+          {allYears.map((year) => (
+            <button
+              key={year}
+              onClick={() => setSelectedYear(year)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300 border ${
+                selectedYear === year 
+                  ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.2)]' 
+                  : 'border-transparent text-slate-400 hover:bg-white/5 hover:text-slate-200'
+              }`}
+            >
+              <span className="font-medium">{year === 'All' ? 'Full Archive' : `Class of ${year}`}</span>
+              {selectedYear === year && (
+                <motion.div layoutId="active-dot" className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+              )}
+            </button>
+          ))}
+        </div>
+      </aside>
 
-      <div className="flex gap-4 border-b border-slate-100">
-        <button 
-          onClick={() => setActiveTab('courses')}
-          className={`pb-4 px-2 font-bold text-sm uppercase tracking-widest transition-all ${activeTab === 'courses' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}
-        >
-          Courses
-        </button>
-        <button 
-          onClick={() => setActiveTab('questions')}
-          className={`pb-4 px-2 font-bold text-sm uppercase tracking-widest transition-all ${activeTab === 'questions' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}
-        >
-          Q&A Bank
-        </button>
-      </div>
-
-      {activeTab === 'courses' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {courses.map((course: any) => (
-            <Card key={course.id} className="group hover:shadow-xl transition-all border-slate-100 overflow-hidden cursor-pointer" onClick={() => onSelectCourse(course)}>
-              <div className="h-40 bg-slate-100 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                <img src={`https://picsum.photos/seed/${course.subject}/800/400`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" referrerPolicy="no-referrer" />
-                <Badge className="absolute top-4 left-4 bg-white/20 backdrop-blur-md text-white border-white/30">{course.subject}</Badge>
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col relative overflow-hidden bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-cyan-950/20 via-slate-950 to-slate-950">
+        {/* Header: Search */}
+        <header className="p-8 border-b border-white/5 bg-slate-950/50 backdrop-blur-md sticky top-0 z-10">
+          <div className="max-w-4xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-1">
+              <h1 className="text-3xl font-black tracking-tight text-white uppercase italic">The Collective Library</h1>
+              <p className="text-slate-400 text-sm font-medium tracking-wide">Hardcoded Engine. Zero Latency. Pure Knowledge.</p>
+            </div>
+            
+            <div className="relative group w-full md:w-96">
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-emerald-500 rounded-2xl blur opacity-20 group-focus-within:opacity-40 transition duration-500" />
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
+                <Input 
+                  placeholder="Scan question bank..." 
+                  className="pl-12 py-6 bg-slate-900/80 border-white/10 rounded-2xl focus:ring-2 focus:ring-cyan-500/30 transition-all text-white placeholder:text-slate-600"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
               </div>
-              <CardContent className="p-6 space-y-4">
-                <h3 className="text-xl font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{course.title}</h3>
-                <p className="text-slate-500 text-sm line-clamp-2">{course.description}</p>
-                <div className="flex items-center justify-between pt-2">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                    <Play className="w-3 h-3" /> 12 Lessons
-                  </div>
-                  <Button variant="ghost" size="sm" className="text-blue-600 font-bold group-hover:translate-x-1 transition-transform">
-                    Start Learning <ChevronRight className="w-4 h-4" />
-                  </Button>
+            </div>
+          </div>
+        </header>
+
+        {/* Scrollable List */}
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+          <div className="max-w-4xl mx-auto space-y-8 pb-20">
+            {filteredQuestions.length > 0 ? (
+              filteredQuestions.map((q, index) => (
+                <motion.div
+                  key={q.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <Card className="bg-slate-900/40 border border-white/5 hover:border-cyan-500/30 transition-all duration-500 overflow-hidden backdrop-blur-sm group">
+                    <CardContent className="p-0">
+                      {/* Card Header */}
+                      <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+                        <div className="flex items-center gap-3">
+                          <Badge variant="outline" className="bg-cyan-500/10 text-cyan-400 border-cyan-500/30 px-3 py-1 text-[10px] uppercase font-black tracking-tighter">
+                            JAMB ENGLISH - {q.examyear}
+                          </Badge>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">ID: #{q.id}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                           <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px]">VERIFIED</Badge>
+                        </div>
+                      </div>
+
+                      <div className="p-8 space-y-6">
+                        {/* Section/Passage */}
+                        {q.section && (
+                          <div className="relative">
+                            <div className="absolute inset-0 bg-cyan-400/5 blur-xl rounded-2xl" />
+                            <div className="relative p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
+                              <div className="flex items-center gap-2 mb-3 text-cyan-400 font-black text-[10px] uppercase tracking-widest">
+                                <BookOpen className="w-3 h-3" /> Instruction/Passage
+                              </div>
+                              <p 
+                                className="text-slate-300 text-sm leading-relaxed italic"
+                                dangerouslySetInnerHTML={{ __html: q.section }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Question */}
+                        <div className="space-y-4">
+                          <h3 
+                            className="text-xl md:text-2xl font-bold text-slate-100 leading-tight"
+                            dangerouslySetInnerHTML={{ __html: q.question }}
+                          />
+                        </div>
+
+                        {/* Options */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {Object.entries(q.option).map(([key, value]) => {
+                            if (!value || key === 'e') return null;
+                            const isCorrect = revealedAnswers[q.id] && q.answer.toLowerCase() === key.toLowerCase();
+                            return (
+                              <div 
+                                key={key}
+                                className={`p-4 rounded-xl border transition-all duration-300 flex items-center gap-4 ${
+                                  isCorrect 
+                                    ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-300' 
+                                    : 'bg-white/[0.03] border-white/5 text-slate-400'
+                                }`}
+                              >
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm uppercase ${
+                                  isCorrect ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'
+                                }`}>
+                                  {key}
+                                </div>
+                                <span className="font-medium text-sm">{value}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-wrap items-center gap-4 pt-4">
+                          <Button 
+                            onClick={() => toggleReveal(q.id)}
+                            className={`flex-1 md:flex-none h-12 gap-2 rounded-xl font-bold shadow-lg transition-all ${
+                              revealedAnswers[q.id] 
+                                ? 'bg-white text-slate-950 hover:bg-slate-200' 
+                                : 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                            }`}
+                          >
+                            {revealedAnswers[q.id] ? (
+                              <><EyeOff className="w-4 h-4" /> Hide Solution</>
+                            ) : (
+                              <><Eye className="w-4 h-4" /> Reveal Answer & Tutor Logic</>
+                            )}
+                          </Button>
+                          
+                          <Button 
+                            variant="outline" 
+                            onClick={() => discussWithTutor(q)}
+                            className="flex-1 md:flex-none h-12 border-white/10 bg-white/5 hover:bg-white/10 text-white gap-2 rounded-xl group"
+                          >
+                            <MessageSquare className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+                            Discuss with Tutor Chuks
+                          </Button>
+                        </div>
+
+                        {/* Reveal Panel */}
+                        <AnimatePresence>
+                          {revealedAnswers[q.id] && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="mt-6 p-6 rounded-2xl bg-white/[0.03] border-l-4 border-emerald-500 space-y-4">
+                                <div className="flex items-center gap-2 text-emerald-400 font-black text-xs uppercase">
+                                  <Brain className="w-4 h-4" /> Tutor Chuks Insight
+                                </div>
+                                
+                                <div className="flex gap-4">
+                                  <div className="w-12 h-12 shrink-0 rounded-full bg-cyan-500/20 border border-white/10 flex items-center justify-center p-1 overflow-hidden">
+                                     <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Chuks" alt="Tutor" />
+                                  </div>
+                                  <div className="space-y-2">
+                                     <div className="p-4 rounded-tr-2xl rounded-br-2xl rounded-bl-2xl bg-slate-800 text-slate-200 text-sm leading-relaxed">
+                                       {q.solution || "This follows standard grammatical rules for this sub-category. Let's break it down further if you need clarification!"}
+                                     </div>
+                                     <p className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-1">
+                                       Correct Key: <span className="text-xl ml-1">{q.answer.toUpperCase()}</span>
+                                     </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))
+            ) : (
+              <div className="py-40 text-center space-y-6">
+                <div className="w-24 h-24 rounded-full bg-slate-900 border border-white/5 flex items-center justify-center mx-auto shadow-[0_0_50px_rgba(34,211,238,0.1)]">
+                   <Filter className="w-10 h-10 text-slate-700" />
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+                <div>
+                   <h3 className="text-2xl font-bold text-white">No matches found</h3>
+                   <p className="text-slate-500 max-w-sm mx-auto mt-2">Adjust your search or filters to scanning different nodes in the collective library.</p>
+                </div>
+                <Button onClick={() => { setSearch(''); setSelectedYear('All'); }} variant="link" className="text-cyan-400">Clear all filters</Button>
+              </div>
+            )}
+          </div>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {questions.map((q: any) => (
-            <Card key={q.id} className="hover:border-blue-200 transition-all cursor-pointer group" onClick={() => onSelectQuestion(q)}>
-              <CardContent className="p-6 flex gap-6">
-                <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors shrink-0">
-                  <HelpCircle className="w-6 h-6" />
-                </div>
-                <div className="flex-1 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-[10px] font-black uppercase tracking-widest">{q.exam_type || 'EXAM'}</Badge>
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{q.year}</span>
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900 leading-snug">{q.question_content}</h3>
-                  <div className="flex items-center gap-4 pt-2">
-                    <span className="text-xs font-bold text-slate-400">Difficulty: <span className="text-blue-600">{q.difficulty_level}</span></span>
-                    <Button variant="ghost" size="sm" className="h-8 text-slate-400 hover:text-blue-600">
-                      <Bookmark className="w-4 h-4 mr-1" /> Save
-                    </Button>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-slate-300 self-center" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      </main>
+      
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 5px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(34, 211, 238, 0.2);
+        }
+      `}</style>
     </div>
   );
 }

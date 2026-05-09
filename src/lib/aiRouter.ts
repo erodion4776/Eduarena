@@ -48,7 +48,7 @@ export const aiRouter = {
     try {
       const geminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
       if (geminiKey) {
-        const genAI = new GoogleGenAI(geminiKey);
+        const genAI = new GoogleGenAI({ apiKey: geminiKey });
         const model = genAI.getGenerativeModel({ 
             model: 'gemini-1.5-flash',
             systemInstruction

@@ -31,7 +31,7 @@ export default function Dashboard() {
   }
 
   const renderView = () => {
-    if (view === 'hub') return <KnowledgeHub onSelectCourse={()=>{}} onSelectQuestion={()=>{}} />;
+    if (view === 'hub') return <KnowledgeHub />;
     if (view === 'solutions') return <SolutionsEngine initialSolutionId={null} />;
     if (view === 'oracle') return <ExamOracle />;
     if (view === 'lounge') return <ScholarLounge />;

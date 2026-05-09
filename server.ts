@@ -18,24 +18,29 @@ const DB_FILE = path.join(__dirname, "db.json");
 
 // Load hardcoded questions
 const hardcodedQuestionsRaw = JSON.parse(fs.readFileSync(path.join(__dirname, "src/data/questions.json"), "utf8"));
-const hardcodedQuestions = hardcodedQuestionsRaw.map((q: any) => ({
-    id: `hc-${q.id}`,
-    exam_type: q.examtype?.toUpperCase() || "JAMB",
-    year: parseInt(q.examyear) || 2024,
-    subject_id: q.subject === "Biology" ? "s2" : "s5", // Simple mapping
-    topic_id: q.subject === "Biology" ? "t1" : "t7",
-    question_text: q.question.replace(/<[^>]*>?/gm, ''), // Remove HTML
-    options: {
-        A: q.option.a,
-        B: q.option.b,
-        C: q.option.c,
-        D: q.option.d
-    },
-    correct_option: q.answer?.toUpperCase(),
-    explanation: q.solution || "This is a past exam question.",
-    difficulty_level: 5,
-    created_at: new Date().toISOString()
-}));
+const hardcodedQuestions = hardcodedQuestionsRaw.map((q: any) => {
+    const questionText = q.question.replace(/<[^>]*>?/gm, '');
+    return {
+        id: `hc-${q.id}`,
+        exam_type: q.examtype?.toUpperCase() || "JAMB",
+        year: parseInt(q.examyear) || 2024,
+        subject_id: q.subject === "Biology" ? "s2" : "s5", 
+        topic_id: q.subject === "Biology" ? "t1" : "t7",
+        subject: q.subject, // Used for direct filtering in /api/questions
+        question_content: questionText,
+        question_text: questionText,
+        options: {
+            A: q.option.a,
+            B: q.option.b,
+            C: q.option.c,
+            D: q.option.d
+        },
+        correct_option: q.answer?.toUpperCase(),
+        explanation: q.solution || "This is a official past exam question.",
+        difficulty_level: 5,
+        created_at: new Date().toISOString()
+    };
+});
 
 // Initial DB state
 const initialDb = {
@@ -69,7 +74,7 @@ const initialDb = {
       year: 1998,
       subject_id: "s2",
       topic_id: "t1",
-      question_text: "Which of the following is the primary site of photosynthesis in a leaf?",
+      question_content: "Which of the following is the primary site of photosynthesis in a leaf?",
       options: { A: "Stoma", B: "Mesophyll", C: "Epidermis", D: "Vascular bundle" },
       correct_option: "B",
       explanation: "Photosynthesis primarily takes place in the mesophyll layer of cells in the leaf, which contains numerous chloroplasts.",
@@ -83,7 +88,7 @@ const initialDb = {
       year: 2015,
       subject_id: "s1",
       topic_id: "t2",
-      question_text: "Find the derivative of $y = 3x^2 + 5x - 7$ with respect to $x$.",
+      question_content: "Find the derivative of $y = 3x^2 + 5x - 7$ with respect to $x$.",
       options: { A: "$6x + 5$", B: "$3x + 5$", C: "$6x - 7$", D: "$x^2 + 5$" },
       correct_option: "A",
       explanation: "Using the power rule: $\\frac{d}{dx}(ax^n) = anx^{n-1}$. So, $\\frac{dy}{dx} = 2(3)x^{2-1} + 1(5)x^{1-1} + 0 = 6x + 5$.",
@@ -377,11 +382,13 @@ async function startServer() {
   app.get("/api/questions", (req, res) => {
     const { search, subject, exam_type } = req.query;
     const db = getDb();
-    let filtered = db.questions;
+    let filtered = db.pastQuestions;
 
     if (search) {
       const s = String(search).toLowerCase();
-      filtered = filtered.filter((q: any) => q.question_text.toLowerCase().includes(s));
+      filtered = filtered.filter((q: any) => 
+        (q.question_content || q.question_text || "").toLowerCase().includes(s)
+      );
     }
     if (subject) {
       filtered = filtered.filter((q: any) => q.subject === subject);

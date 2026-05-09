@@ -5,10 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { 
   Upload, Database, FileJson, CheckCircle2, AlertCircle, 
-  Cpu, Activity, Save, RefreshCw, Layers, Sparkles
+  Cpu, Activity, Save, RefreshCw, Layers, Sparkles, Terminal
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import DataHarvester from './DataHarvester';
 import { 
   Select, 
   SelectContent, 
@@ -20,7 +21,7 @@ import {
 export default function AdminLoader() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const [topics, setTopics] = useState<any[]>([]);
-  const [importType, setImportType] = useState<'bulk' | 'ocr'>('bulk');
+  const [importType, setImportType] = useState<'bulk' | 'ocr' | 'harvest'>('bulk');
   const [jsonInput, setJsonInput] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<{ added: number, skipped: number } | null>(null);
@@ -121,6 +122,14 @@ export default function AdminLoader() {
                   <Cpu className="w-6 h-6" />
                   <span className="text-[10px] font-black uppercase italic">AI Vision</span>
                 </Button>
+                <Button 
+                  variant={importType === 'harvest' ? 'default' : 'outline'}
+                  className={`h-24 flex-col gap-2 rounded-2xl col-span-2 ${importType === 'harvest' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
+                  onClick={() => setImportType('harvest')}
+                >
+                  <Terminal className="w-6 h-6" />
+                  <span className="text-[10px] font-black uppercase italic">ALOC Harvester</span>
+                </Button>
               </div>
 
               <div className="pt-4 space-y-4">
@@ -164,7 +173,11 @@ export default function AdminLoader() {
 
         {/* Main Workspace */}
         <div className="lg:col-span-2">
-          {importType === 'bulk' ? (
+          {importType === 'harvest' ? (
+            <div className="rounded-[40px] overflow-hidden border-4 border-slate-900 shadow-2xl">
+              <DataHarvester />
+            </div>
+          ) : importType === 'bulk' ? (
             <Card className="border-2 border-slate-100 shadow-xl rounded-[40px] overflow-hidden flex flex-col h-full">
               <div className="p-8 bg-slate-900 text-white flex items-center justify-between">
                 <div>
