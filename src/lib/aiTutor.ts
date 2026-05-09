@@ -2,20 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Groq } from 'groq-sdk';
 import { HfInference } from '@huggingface/inference';
 
-export interface ALOCQuestion {
-  id: number;
-  question: string;
-  option: { a: string; b: string; c: string; d: string };
-  answer: string;
-  solution: string;
-  examType: string;
-  examyear: string;
-}
-
-export interface TutorResponse {
-  answer: string;
-  provider: 'gemini' | 'groq' | 'huggingface' | 'fallback';
-}
+import { ALOCQuestion, TutorResponse } from '../types';
 
 export const aiTutor = {
   async askTutorChuksLive(userQuery: string, question: ALOCQuestion): Promise<TutorResponse> {
@@ -25,8 +12,10 @@ export const aiTutor = {
 
     const apiDataContext = `
 [HIDDEN_KNOWLEDGE: ALOC_API_SOURCE]
+SECTION/INSTRUCTION: ${question.section || "N/A"}
+PASSAGE: ${question.passage || "N/A"}
 QUESTION: ${question.question}
-OPTIONS: A) ${question.option.a}, B) ${question.option.b}, C) ${question.option.c}, D) ${question.option.d}
+OPTIONS: A) ${question.option.a}, B) ${question.option.b}, C) ${question.option.c}, D) ${question.option.d}, E) ${question.option.e || "N/A"}
 CORRECT_ANSWER: ${question.answer.toUpperCase()}
 EXPLANATION_FROM_SOURCE: ${question.solution || "Not provided by bank"}
 YEAR: ${question.examyear}

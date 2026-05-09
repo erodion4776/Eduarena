@@ -12,40 +12,81 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { alocService } from '../lib/alocService';
-import { aiTutor, ALOCQuestion, TutorResponse } from '../lib/aiTutor';
+import { aiTutor } from '../lib/aiTutor';
+import { ALOCQuestion, TutorResponse } from '../types';
 
 export default function ExamArena() {
   const [currentQuestion, setCurrentQuestion] = useState<ALOCQuestion | null>(null);
+  const [questionQueue, setQuestionQueue] = useState<ALOCQuestion[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [aiResponse, setAiResponse] = useState<TutorResponse | null>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [subject, setSubject] = useState('english');
-  const [examType, setExamType] = useState('jamb');
+  const [examType, setExamType] = useState('utme');
+  const [year, setYear] = useState('');
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetchNewQuestion();
-  }, []);
+    fetchNewQuestion(true); // Always fresh fetch on filters change
+  }, [subject, examType, year]);
 
-  const fetchNewQuestion = async () => {
+  const fetchNewQuestion = async (isFreshBatch: boolean = false) => {
     setLoading(true);
     setAiResponse(null);
+    setSelectedOption(null);
+    setIsCorrect(null);
+    
+    if (!isFreshBatch && currentIndex < questionQueue.length - 1) {
+      // Just move to next in queue
+      const nextIdx = currentIndex + 1;
+      setCurrentIndex(nextIdx);
+      setCurrentQuestion(questionQueue[nextIdx]);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const q = await alocService.fetchLiveQuestion(subject, examType);
-      setCurrentQuestion(q);
+      // Fetch a batch of 20 for consistency
+      const batchSize = 25;
+      const questions = await alocService.fetchLiveQuestions(subject, examType, year, batchSize);
+      
+      if (questions && questions.length > 0) {
+        setQuestionQueue(questions);
+        setCurrentIndex(0);
+        setCurrentQuestion(questions[0]);
+      } else {
+        setCurrentQuestion(null);
+      }
     } catch (err) {
       console.error(err);
+      setCurrentQuestion(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const runNeuralAnalysis = async () => {
+  const handleOptionSelect = (option: string) => {
+    if (selectedOption || !currentQuestion) return;
+    
+    setSelectedOption(option);
+    const correct = option.toLowerCase() === currentQuestion.answer.toLowerCase();
+    setIsCorrect(correct);
+
+    if (!correct) {
+      // Automatically run neural analysis if wrong
+      runNeuralAnalysis(`I picked option ${option.toUpperCase()}, but it's wrong. Oya, enlighten me!`);
+    }
+  };
+
+  const runNeuralAnalysis = async (customQuery?: string) => {
     if (!currentQuestion) return;
     setIsAiProcessing(true);
     setShowAiPanel(true);
     try {
-      const res = await aiTutor.askTutorChuksLive("Explain this question and why the answer is correct.", currentQuestion);
+      const res = await aiTutor.askTutorChuksLive(customQuery || "Explain this question and why the answer is correct.", currentQuestion);
       setAiResponse(res);
     } catch (err) {
       console.error(err);
@@ -111,6 +152,12 @@ export default function ExamArena() {
                     <option value="physics">Physics</option>
                     <option value="chemistry">Chemistry</option>
                     <option value="biology">Biology</option>
+                    <option value="economics">Economics</option>
+                    <option value="government">Government</option>
+                    <option value="civiledu">Civic Education</option>
+                    <option value="commerce">Commerce</option>
+                    <option value="accounting">Accounting</option>
+                    <option value="currentaffairs">Current Affairs</option>
                   </select>
                   <div className="w-px h-4 bg-zinc-800" />
                   <select 
@@ -118,9 +165,24 @@ export default function ExamArena() {
                     onChange={(e) => setExamType(e.target.value)}
                     className="bg-transparent text-xs font-bold uppercase p-2 focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors"
                   >
-                    <option value="jamb">JAMB</option>
+                    <option value="utme">JAMB (UTME)</option>
                     <option value="waec">WAEC</option>
                     <option value="neco">NECO</option>
+                    <option value="post-utme">Post-UTME</option>
+                  </select>
+                  <div className="w-px h-4 bg-zinc-800" />
+                  <select 
+                    value={year}
+                    onChange={(e) => {
+                      setYear(e.target.value);
+                      // fetchNewQuestion will be triggered by useEffect
+                    }}
+                    className="bg-transparent text-xs font-bold uppercase p-2 focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors"
+                  >
+                    <option value="">All Years</option>
+                    {Array.from({ length: 30 }, (_, i) => 2024 - i).map(y => (
+                      <option key={y} value={y.toString()}>{y}</option>
+                    ))}
                   </select>
                </div>
             </div>
@@ -140,30 +202,83 @@ export default function ExamArena() {
                       animate={{ opacity: 1, y: 0 }}
                       className="space-y-8"
                     >
-                      <div className="space-y-4">
+                      <div className="space-y-6">
                         <div className="flex items-center gap-2">
                            <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest border border-emerald-500/20">
                              {currentQuestion.examType} {currentQuestion.examyear}
                            </span>
                            <span className="text-zinc-600 font-mono text-[10px]">ID: {currentQuestion.id}</span>
                         </div>
-                        <h2 className="text-2xl md:text-3xl font-bold leading-tight tracking-tight">
-                          {currentQuestion.question}
-                        </h2>
+
+                        {currentQuestion.section && (
+                          <div 
+                            className="p-4 bg-zinc-800/30 border-l-2 border-emerald-500 text-sm italic text-zinc-400 leading-relaxed rounded-r-xl"
+                            dangerouslySetInnerHTML={{ __html: currentQuestion.section }}
+                          />
+                        )}
+
+                        {currentQuestion.passage && (
+                          <div className="p-6 bg-black/40 border border-white/5 rounded-2xl text-sm leading-relaxed text-zinc-300 max-h-[300px] overflow-y-auto custom-scrollbar">
+                            <p className="font-black text-[10px] uppercase tracking-widest text-emerald-500/60 mb-2">Reading Passage</p>
+                            <div dangerouslySetInnerHTML={{ __html: currentQuestion.passage }} />
+                          </div>
+                        )}
+
+                        <h2 
+                          className="text-2xl md:text-3xl font-bold leading-tight tracking-tight"
+                          dangerouslySetInnerHTML={{ __html: currentQuestion.question }}
+                        />
+                        
+                        {currentQuestion.image && (
+                          <div className="my-6 p-4 bg-white/5 rounded-2xl border border-white/5 flex justify-center">
+                            <img 
+                              src={currentQuestion.image} 
+                              alt="Question Diagram" 
+                              className="max-h-[300px] object-contain rounded-lg shadow-2xl"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {Object.entries(currentQuestion.option).map(([key, value]) => (
-                          <button 
-                            key={key}
-                            className="text-left bg-white/5 border border-white/10 p-4 rounded-2xl hover:bg-white/10 hover:border-white/20 transition-all group flex items-start gap-4"
-                          >
-                            <span className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-black uppercase text-zinc-500 group-hover:text-emerald-400 group-hover:bg-emerald-500/10 border border-transparent group-hover:border-emerald-500/20">
-                              {key}
-                            </span>
-                            <span className="text-zinc-300 pt-1">{value}</span>
-                          </button>
-                        ))}
+                        {Object.entries(currentQuestion.option)
+                          .filter(([_, value]) => value && value.trim() !== "")
+                          .map(([key, value]) => {
+                          const isThisSelected = selectedOption === key;
+                          const isThisCorrect = currentQuestion.answer.toLowerCase() === key.toLowerCase();
+                          
+                          let borderClass = "border-white/10";
+                          let bgClass = "bg-white/5";
+                          let dotClass = "bg-zinc-800 text-zinc-500";
+
+                          if (selectedOption) {
+                            if (isThisCorrect) {
+                              borderClass = "border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]";
+                              bgClass = "bg-emerald-500/10";
+                              dotClass = "bg-emerald-500 text-white";
+                            } else if (isThisSelected && !isThisCorrect) {
+                              borderClass = "border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]";
+                              bgClass = "bg-red-500/10";
+                              dotClass = "bg-red-500 text-white";
+                            }
+                          }
+
+                          return (
+                            <button 
+                              key={key}
+                              onClick={() => handleOptionSelect(key)}
+                              disabled={!!selectedOption}
+                              className={`text-left border ${borderClass} ${bgClass} p-4 rounded-2xl transition-all group flex items-start gap-4 disabled:cursor-default`}
+                            >
+                              <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black uppercase border border-transparent transition-colors ${dotClass}`}>
+                                {key}
+                              </span>
+                              <span className={`${selectedOption ? (isThisCorrect ? 'text-emerald-400' : isThisSelected ? 'text-red-400' : 'text-zinc-500') : 'text-zinc-300'} pt-1`}>
+                                {value}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </motion.div>
                   ) : (
@@ -175,17 +290,17 @@ export default function ExamArena() {
 
                   <div className="flex flex-wrap items-center gap-4 mt-12 pt-8 border-t border-white/5">
                     <button 
-                      onClick={fetchNewQuestion}
+                      onClick={() => fetchNewQuestion(false)}
                       disabled={loading}
                       className="flex items-center gap-3 bg-white text-black px-6 py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 transition-colors disabled:opacity-50"
                     >
                       <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                      New Question
+                      {currentIndex < questionQueue.length - 1 ? `Next Question (${currentIndex + 2}/${questionQueue.length})` : 'Shuffle Node'}
                     </button>
 
                     {/* --- STEP 3: THE AI BUTTON --- */}
                     <button 
-                      onClick={runNeuralAnalysis}
+                      onClick={() => runNeuralAnalysis()}
                       className="flex items-center gap-3 bg-emerald-500 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-emerald-400 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)]"
                     >
                       <BrainCircuit className="w-5 h-5" />
@@ -292,7 +407,7 @@ export default function ExamArena() {
                        <span className="text-xs font-black uppercase text-zinc-600 tracking-widest">Query Analysis</span>
                     </div>
                     <div className="bg-white/5 p-6 rounded-3xl border border-white/10 italic text-zinc-400">
-                       "Explain this question and why the answer is correct."
+                       {aiResponse ? `Student input detected. Routing to ${aiResponse.provider.toUpperCase()} nodes...` : "Neural stream initiating..."}
                     </div>
                  </div>
 
