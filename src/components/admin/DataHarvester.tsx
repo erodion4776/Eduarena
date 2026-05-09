@@ -63,14 +63,29 @@ export default function DataHarvester() {
     addLog(`INIT HARVEST PROTOCOL v2.0.0 [${subjectsInQueue.length} SUBJECTS IN QUEUE]`, 'info');
     
     try {
+      addLog('BOOTING VIRTUAL SQL_ENGINE...', 'info');
+      
       const SQL = await initSqlJs({
-        locateFile: file => `https://sql.js.org/dist/${file}`
+        locateFile: file => `https://unpkg.com/sql.js@1.12.0/dist/${file}`
       });
+      
       const db = new SQL.Database();
-      db.run(`CREATE TABLE questions (id INTEGER PRIMARY KEY, subject TEXT, question_text TEXT, option_a TEXT, option_b TEXT, option_c TEXT, option_d TEXT, answer TEXT, explanation TEXT, image_path TEXT, cloud_id TEXT)`);
+      db.run(`CREATE TABLE questions (
+        id INTEGER PRIMARY KEY, 
+        aloc_id INTEGER,
+        subject TEXT, 
+        question_text TEXT, 
+        option_a TEXT, 
+        option_b TEXT, 
+        option_c TEXT, 
+        option_d TEXT, 
+        answer TEXT, 
+        explanation TEXT, 
+        image_url TEXT,
+        exam_year TEXT
+      )`);
 
       const zip = new JSZip();
-      const imagesFolder = zip.folder('images');
 
       for (let sIdx = 0; sIdx < subjectsInQueue.length; sIdx++) {
         if (stopRequested.current) break;
@@ -79,26 +94,29 @@ export default function DataHarvester() {
         setDepletionProgress(0);
         const currentSub = subjectsInQueue[sIdx];
         
-        addLog(`>> COMMENCING EXTRACTION [NODE: ${currentSub.toUpperCase()}]`, 'terminal');
+        addLog(`>> PENETRATING NODE: [${currentSub.toUpperCase()}]`, 'terminal');
         
         const seenIds = new Set<number>();
         let duplicateStreak = 0;
-        const MAX_DUPE_LIMIT = 20;
+        const MAX_DUPE_LIMIT = 25;
         let successCount = 0;
-        let iterations = exhaustMode ? 9999 : count;
+        let iterations = exhaustMode ? 10000 : count;
 
         for (let i = 0; i < iterations; i++) {
           if (stopRequested.current) break;
 
           try {
             const response = await fetch(`https://questions.aloc.ng/api/v2/q?subject=${currentSub.toLowerCase()}`, {
-              headers: { 'Accept': 'application/json', 'AccessToken': token }
+              headers: { 
+                'Accept': 'application/json', 
+                'AccessToken': token.trim() 
+              }
             });
 
             if (!response.ok) {
               if (response.status === 429) {
-                addLog(`RATE_LIMIT [${currentSub}]: SLEEPING 8s`, 'warning');
-                await new Promise(r => setTimeout(r, 8000));
+                addLog(`RATE_LIMIT (429): THROTTLING 10s`, 'warning');
+                await new Promise(r => setTimeout(r, 10000));
                 continue;
               }
               break;
@@ -113,7 +131,7 @@ export default function DataHarvester() {
               setDepletionProgress(progress);
               
               if (exhaustMode && duplicateStreak >= MAX_DUPE_LIMIT) {
-                addLog(`[${currentSub.toUpperCase()}] EXHAUSTED (THRESHOLD REACHED)`, 'success');
+                addLog(`[${currentSub.toUpperCase()}] DEPLETED. NEXT NODE...`, 'success');
                 break;
               }
               continue;
@@ -123,36 +141,59 @@ export default function DataHarvester() {
             duplicateStreak = 0;
             setDepletionProgress(0);
 
-            let cloudUrl = '';
-            // Cloud Sync Logic
-            if (cloudSync && supabase) {
-               const { error: dbError } = await supabase.from('questions').upsert({
-                  aloc_id: q.id, subject: currentSub, exam_type: exam, question_text: q.question,
-                  option_a: q.option.a, option_b: q.option.b, option_c: q.option.c, option_d: q.option.d,
-                  answer: q.answer, explanation: q.solution || '', exam_year: q.examyear
-               }, { onConflict: 'aloc_id' });
-               if (!dbError) addLog(`CLOUD_SYNC: ${q.id}`, 'success');
+            let cloudImageUrl = '';
+            
+            // Image -> Supabase Logic
+            if (q.image && cloudSync && supabase) {
+                try {
+                    const imgRes = await fetch(q.image);
+                    if (imgRes.ok) {
+                        const blob = await imgRes.blob();
+                        const path = `questions/${currentSub}/${q.id}.png`;
+                        const { error: uploadError } = await supabase.storage
+                            .from('question_assets')
+                            .upload(path, blob, { upsert: true });
+
+                        if (!uploadError) {
+                            const { data: { publicUrl } } = supabase.storage.from('question_assets').getPublicUrl(path);
+                            cloudImageUrl = publicUrl;
+                        }
+                    }
+                } catch (e) {
+                    addLog(`IMAGE_SYNC_BLOCK: ${q.id}`, 'error');
+                }
             }
 
-            db.run(`INSERT INTO questions (subject, question_text, option_a, option_b, option_c, option_d, answer, explanation) VALUES (?,?,?,?,?,?,?,?)`, 
-               [currentSub, q.question, q.option.a, q.option.b, q.option.c, q.option.d, q.answer, q.solution || '']);
+            // Cloud Data Sync
+            if (cloudSync && supabase) {
+               await supabase.from('questions').upsert({
+                  aloc_id: q.id, subject: currentSub, exam_type: exam, question_text: q.question,
+                  option_a: q.option.a, option_b: q.option.b, option_c: q.option.c, option_d: q.option.d,
+                  answer: q.answer, explanation: q.solution || '', exam_year: q.examyear,
+                  image_url: cloudImageUrl || q.image || ''
+               }, { onConflict: 'aloc_id' });
+            }
+
+            // Local DB Sync
+            db.run(`INSERT INTO questions (aloc_id, subject, question_text, option_a, option_b, option_c, option_d, answer, explanation, image_url, exam_year) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, 
+               [q.id, currentSub, q.question, q.option.a, q.option.b, q.option.c, q.option.d, q.answer, q.solution || '', cloudImageUrl || q.image || '', q.examyear]);
 
             successCount++;
-            if (successCount % 10 === 0) addLog(`SAVED: ${successCount} NODES [${currentSub}]`, 'info');
+            if (successCount % 5 === 0) addLog(`COMMITTED: ${successCount} NODES [${currentSub}]`, 'success');
             
-            await new Promise(r => setTimeout(r, 500 + Math.random() * 500));
+            await new Promise(r => setTimeout(r, 600 + Math.random() * 600));
           } catch (err: any) {
-            addLog(`ERR: ${err.message}`, 'error');
+            addLog(`SCRAPE_EXCEPTION: ${err.message}`, 'error');
             await new Promise(r => setTimeout(r, 2000));
           }
         }
       }
 
       const dbExport = db.export();
-      zip.file('harvest_full.db', dbExport);
+      zip.file('cbt_master_vault.db', dbExport);
       const pkg = await zip.generateAsync({ type: 'blob' });
-      saveAs(pkg, `harvest_final_${Date.now()}.zip`);
-      addLog('MASTER ARCHIVE GENERATED. DOWNLOAD INITIATED.', 'success');
+      saveAs(pkg, `extract_${Date.now()}.zip`);
+      addLog('MASTER HARVEST COMPLETE. DOWNLOAD READY.', 'success');
 
     } catch (err: any) {
       addLog(`FATAL_CRASH: ${err.message}`, 'error');
