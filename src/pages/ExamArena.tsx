@@ -9,7 +9,9 @@ import {
   Cpu, 
   MessageSquare,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Volume2,
+  Square
 } from 'lucide-react';
 import { alocService } from '../lib/alocService';
 import { aiTutor } from '../lib/aiTutor';
@@ -18,6 +20,7 @@ import { cacheService } from '../lib/cacheService';
 import { questionRouter } from '../lib/questionRouter';
 import { supabase } from '../lib/supabase';
 import { logger } from '../lib/logger';
+import { voiceService } from '../lib/voiceService';
 
 export default function ExamArena() {
   const [currentQuestion, setCurrentQuestion] = useState<ALOCQuestion | null>(null);
@@ -36,6 +39,58 @@ export default function ExamArena() {
   const [globalVaultCount, setGlobalVaultCount] = useState<number | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [debugLogs, setDebugLogs] = useState(logger.getLogs());
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageRetry, setImageRetry] = useState(0); // 0: questions/, 1: root storage, 2: failed
+
+  const IMAGE_BASE_URL = 'https://questions.aloc.com.ng/storage/';
+
+  const getImageUrl = () => {
+    if (!currentQuestion?.image || currentQuestion.image.trim() === "") return '';
+    if (currentQuestion.image.startsWith('http')) return currentQuestion.image;
+    
+    // Universal logic: try root storage directly
+    return `https://questions.aloc.com.ng/storage/${currentQuestion.image}`;
+  };
+
+  const showDemoImage = () => {
+    const demoQuestion: ALOCQuestion = {
+      id: 9999,
+      subject: "physics",
+      examType: "UTME",
+      examyear: "2024",
+      question: "Calculate the total resistance in the circuit shown below. This is a Neural Hub visual demonstration to prove diagram rendering.",
+      option: {
+        a: "5.0 Ω",
+        b: "10.0 Ω",
+        c: "15.0 Ω",
+        d: "20.0 Ω",
+        e: ""
+      },
+      answer: "a",
+      solution: "In a parallel circuit, the total resistance is calculated using the reciprocal formula. This demo uses a high-quality external image to verify that the Neural Hub interface correctly renders diagrams regardless of the source.",
+      image: "https://www.allaboutcircuits.com/uploads/articles/three-resistor-parallel-circuit.jpg",
+      source: "vault"
+    };
+    setCurrentQuestion(demoQuestion);
+    setQuestionQueue([demoQuestion]);
+    setCurrentIndex(0);
+    setImageError(false);
+    setImageLoading(true);
+    setAiResponse(null);
+    logger.info("🎬 Demo Mode: Loading hardcoded visual test question.");
+  };
+
+  const handleImageError = () => {
+    logger.error(`Image failed to render: ${getImageUrl()}`);
+    setImageError(true);
+  };
+
+  useEffect(() => {
+    voiceService.setChangeListener(setIsSpeaking);
+    return () => voiceService.stop();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = logger.subscribe(setDebugLogs);
@@ -83,13 +138,19 @@ export default function ExamArena() {
     fetchNewQuestion(true); // Always fresh fetch on filters change
   }, [subject, examType, year]);
 
-  const fetchNewQuestion = async (isFreshBatch: boolean = false) => {
+  const fetchNewQuestion = async (isFreshBatch: boolean = false, subjectOverride?: string) => {
     setLoading(true);
     setAiResponse(null);
     setSelectedOption(null);
     setIsCorrect(null);
+    voiceService.stop();
+    setImageError(false);
+    setImageLoading(true);
+    setImageRetry(0);
+
+    const activeSubject = subjectOverride || subject;
     
-    if (!isFreshBatch && currentIndex < questionQueue.length - 1) {
+    if (!isFreshBatch && currentIndex < questionQueue.length - 1 && !subjectOverride) {
       // Just move to next in queue
       const nextIdx = currentIndex + 1;
       setCurrentIndex(nextIdx);
@@ -100,13 +161,10 @@ export default function ExamArena() {
 
     try {
       // Use Smart Router for fetching
-      // Since router currently returns one, we'll just fetch one or loop
-      // Given the user request to "use this getSmartQuestion logic", 
-      // we'll prioritize single smart fetches but can still batch if needed.
-      // For now, let's just fetch one to stay true to the "Source" badge logic.
-      const question = await questionRouter.getSmartQuestion(subject, examType, year);
+      const question = await questionRouter.getSmartQuestion(activeSubject, examType, year);
       
       if (question) {
+        if (subjectOverride) setSubject(subjectOverride);
         setQuestionQueue([question]);
         setCurrentIndex(0);
         setCurrentQuestion(question);
@@ -204,7 +262,21 @@ export default function ExamArena() {
             >
               <div className="bg-black/50 border border-zinc-800 rounded-lg p-3 font-mono text-[10px]">
                  <div className="flex justify-between items-center mb-2 border-b border-zinc-800 pb-1">
-                    <span className="text-zinc-500 font-bold">BRIDGE_DIAGNOSTICS</span>
+                    <div className="flex items-center gap-4">
+                       <span className="text-zinc-500 font-bold">BRIDGE_DIAGNOSTICS</span>
+                       <button 
+                         onClick={() => fetchNewQuestion(true, 'physics')}
+                         className="px-2 py-0.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded text-[8px] font-black tracking-tighter transition-all"
+                       >
+                          FORCE_PHYSICS_DIAGRAM
+                       </button>
+                       <button 
+                         onClick={showDemoImage}
+                         className="px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded text-[8px] font-black tracking-tighter transition-all"
+                       >
+                          SHOW_IMAGE_DEMO
+                       </button>
+                    </div>
                     <button onClick={() => setShowLogs(false)} className="text-zinc-600 hover:text-white">CLOSE</button>
                  </div>
                  <div className="max-h-40 overflow-y-auto custom-scrollbar flex flex-col gap-1">
@@ -330,20 +402,45 @@ export default function ExamArena() {
                           </div>
                         )}
 
-                        <h2 
-                          className="text-2xl md:text-3xl font-bold leading-tight tracking-tight"
-                          dangerouslySetInnerHTML={{ __html: currentQuestion.question }}
-                        />
-                        
-                        {currentQuestion.image && (
-                          <div className="my-6 p-4 bg-white/5 rounded-2xl border border-white/5 flex justify-center">
-                            <img 
-                              src={currentQuestion.image} 
-                              alt="Question Diagram" 
-                              className="max-h-[300px] object-contain rounded-lg shadow-2xl"
-                            />
+                        {currentQuestion.image && !imageError && (
+                          <div className="relative group/img overflow-hidden rounded-2xl bg-white border border-white/10 shadow-xl">
+                            {imageLoading && (
+                              <div className="absolute inset-0 bg-zinc-100 animate-pulse flex items-center justify-center">
+                                <Cpu className="w-8 h-8 text-zinc-300 animate-spin" />
+                              </div>
+                            )}
+                            <div className="p-4 flex justify-center bg-white">
+                              <img 
+                                src={getImageUrl()} 
+                                alt="Exam Diagram" 
+                                onLoad={() => setImageLoading(false)}
+                                onError={handleImageError}
+                                className={`max-h-64 object-contain transition-opacity duration-500 rounded-sm ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
+                              />
+                            </div>
+                            {!imageLoading && (
+                              <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-md rounded text-[8px] font-bold text-zinc-300 uppercase tracking-widest opacity-0 group-hover/img:opacity-100 transition-opacity">
+                                NEURAL_DIAGRAM_ATTACHED
+                              </div>
+                            )}
                           </div>
                         )}
+
+                        <div className="flex flex-col gap-1">
+                          <h2 
+                            className="text-2xl md:text-3xl font-bold leading-tight tracking-tight mt-2"
+                            dangerouslySetInnerHTML={{ __html: currentQuestion.question }}
+                          />
+                          
+                          {/* Visual Debugger */}
+                          <div className="mt-4 p-2 bg-red-500/5 border border-red-500/10 rounded-lg">
+                             <div className="flex items-center gap-2 text-[10px] font-mono text-red-400">
+                                <span className="font-bold">DEBUG:</span>
+                                <span>{currentQuestion.image ? `Image Data = "${currentQuestion.image}"` : "No image in this question data."}</span>
+                                {imageError && <span className="text-red-600 font-black ml-2 underline">!! RENDERING_FAILED !!</span>}
+                             </div>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -526,9 +623,52 @@ export default function ExamArena() {
                  </div>
 
                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                       <Terminal className="w-4 h-4 text-emerald-500" />
-                       <span className="text-xs font-black uppercase text-emerald-500 tracking-widest">Tutor Output</span>
+                    <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-2">
+                          <Terminal className="w-4 h-4 text-emerald-500" />
+                          <span className="text-xs font-black uppercase text-emerald-500 tracking-widest">Tutor Output</span>
+                       </div>
+                       {aiResponse && (
+                         <div className="flex items-center gap-3">
+                           <AnimatePresence>
+                             {isSpeaking && (
+                               <motion.div 
+                                 initial={{ opacity: 0, scale: 0.8 }}
+                                 animate={{ opacity: 1, scale: 1 }}
+                                 exit={{ opacity: 0, scale: 0.8 }}
+                                 className="flex items-end gap-0.5 h-3"
+                               >
+                                 {[0, 1, 2].map((i) => (
+                                   <motion.div
+                                     key={i}
+                                     animate={{ 
+                                       height: ["20%", "100%", "20%"]
+                                     }}
+                                     transition={{ 
+                                       duration: 0.6, 
+                                       repeat: Infinity, 
+                                       delay: i * 0.1,
+                                       ease: "easeInOut"
+                                     }}
+                                     className="w-0.5 bg-cyan-400 rounded-full"
+                                   />
+                                 ))}
+                               </motion.div>
+                             )}
+                           </AnimatePresence>
+                           <button 
+                             onClick={() => isSpeaking ? voiceService.stop() : voiceService.speak(aiResponse.answer)}
+                             className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-xl border border-emerald-500/20 transition-all group relative overflow-hidden"
+                           >
+                             <div className="absolute inset-0 bg-emerald-400/5 blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+                             {isSpeaking ? (
+                               <Square className="w-4 h-4 text-emerald-400 fill-emerald-400" />
+                             ) : (
+                               <Volume2 className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                             )}
+                           </button>
+                         </div>
+                       )}
                     </div>
                     <div className="min-h-[200px] relative">
                        {isAiProcessing ? (
@@ -569,6 +709,25 @@ export default function ExamArena() {
           background: #27272a;
         }
       `}} />
+
+      {/* --- Neural Data Stream Overlay --- */}
+      <div className="fixed bottom-8 left-8 z-30 pointer-events-none hidden md:block">
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800 p-3 rounded-xl shadow-2xl"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            <span className="text-[10px] font-black tracking-widest text-emerald-500/60 uppercase">Neural Data Stream</span>
+          </div>
+          <div className="font-mono text-[9px] text-zinc-400">
+            IMAGE_FIELD: <span className={currentQuestion?.image ? "text-cyan-400" : "text-zinc-600"}>
+              "{currentQuestion?.image || ""}"
+            </span>
+          </div>
+        </motion.div>
+      </div>
     </div>
   );
 }

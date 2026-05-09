@@ -18,6 +18,7 @@ DATA_SOURCE: ${question.source === 'vault' ? "GLOBAL_VAULT" : "LIVE_SATELLITE"}
 VAULT_TOTAL: ${stats.total}
 SECTION/INSTRUCTION: ${question.section || "N/A"}
 PASSAGE: ${question.passage || "N/A"}
+VISUAL_DIAGRAM_PRESENT: ${!!question.image}
 QUESTION: ${question.question}
 OPTIONS: A) ${question.option.a}, B) ${question.option.b}, C) ${question.option.c}, D) ${question.option.d}, E) ${question.option.e || "N/A"}
 CORRECT_ANSWER: ${question.answer.toUpperCase()}

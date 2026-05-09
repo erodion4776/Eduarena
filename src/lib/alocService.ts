@@ -32,11 +32,7 @@ export const alocService = {
       
       const normalizeQuestion = (q: any): ALOCQuestion => {
         let imgUrl = q.image;
-        if (imgUrl && typeof imgUrl === 'string' && imgUrl.trim() !== '') {
-           if (!imgUrl.startsWith('http')) {
-             imgUrl = `https://questions.aloc.com.ng/storage/questions/${imgUrl.trim()}`;
-           }
-        } else {
+        if (!imgUrl || (typeof imgUrl === 'string' && imgUrl.trim() === '')) {
           imgUrl = undefined;
         }
 
