@@ -23,19 +23,33 @@ class Logger {
     
     // Also log to console
     const color = level === 'error' ? 'red' : level === 'warn' ? 'orange' : 'cyan';
-    console.log(`%c[${level.toUpperCase()}] ${message}`, `color: ${color}`, details || '');
+    const displayDetails = details instanceof Error 
+      ? { message: details.message, stack: details.stack } 
+      : details;
+    console.log(`%c[${level.toUpperCase()}] ${message}`, `color: ${color}`, displayDetails || '');
+  }
+
+  private serializeDetails(details: any) {
+    if (details instanceof Error) {
+      return { 
+        name: details.name, 
+        message: details.message,
+        stack: details.stack?.split('\n').slice(0, 2).join('\n') // Just first few lines
+      };
+    }
+    return details;
   }
 
   info(message: string, details?: any) {
-    this.addLog('info', message, details);
+    this.addLog('info', message, this.serializeDetails(details));
   }
 
   error(message: string, details?: any) {
-    this.addLog('error', message, details);
+    this.addLog('error', message, this.serializeDetails(details));
   }
 
   warn(message: string, details?: any) {
-    this.addLog('warn', message, details);
+    this.addLog('warn', message, this.serializeDetails(details));
   }
 
   getLogs() {

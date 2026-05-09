@@ -94,12 +94,17 @@ export const questionRouter = {
       return;
     }
 
+    if (!question || !question.id) {
+      logger.warn("Sync Skipped: Invalid question data received.", question);
+      return;
+    }
+
     logger.info(`Attempting to sync Question ID ${question.id}...`);
     try {
       const payload = {
         id: question.id,
         subject: (question.subject || 'unknown').toLowerCase(),
-        exam_type: question.examType.toLowerCase(),
+        exam_type: (question.examType || 'unknown').toLowerCase(),
         question_data: question
       };
 
@@ -115,10 +120,10 @@ export const questionRouter = {
           status
         });
       } else {
-        logger.info(`Question ID ${question.id} synced. Status: ${status}`);
+        logger.info(`Question ID ${question.id} synced successfully.`);
       }
     } catch (e) {
-      logger.error("Cloud Bridge Critical Exception", e);
+      logger.error("Cloud Bridge Critical Exception during Sync", e);
     }
   },
 
@@ -131,42 +136,43 @@ export const questionRouter = {
       return;
     }
     
-    logger.info("Starting migration check...");
     try {
       const vaultStr = localStorage.getItem('EDU_ARENA_LOCAL_VAULT');
       if (!vaultStr) {
-        logger.info("No items found in Local Cache to migrate.");
+        logger.info("Local Cache is clear. No migration needed.");
         return;
       }
       
       const localVault: ALOCQuestion[] = JSON.parse(vaultStr);
-      if (localVault.length === 0) {
-        logger.info("Local Cache is empty.");
+      // Ensure we only try to sync valid questions with IDs
+      const validQuestions = localVault.filter(q => q && q.id);
+      
+      if (validQuestions.length === 0) {
+        logger.info("Local Cache empty or contains invalid data.");
         return;
       }
 
-      logger.info(`Preparing migration for ${localVault.length} items...`);
+      logger.info(`Migration starting for ${validQuestions.length} items...`);
       
-      const toSync = localVault.map(q => ({
+      const toSync = validQuestions.map(q => ({
         id: q.id,
         subject: (q.subject || 'unknown').toLowerCase(),
-        exam_type: q.examType.toLowerCase(),
+        exam_type: (q.examType || 'unknown').toLowerCase(),
         question_data: q
       }));
 
-      const { data, error, status } = await supabase
+      const { error, status } = await supabase
         .from('global_questions_vault')
-        .upsert(toSync, { onConflict: 'id' })
-        .select();
+        .upsert(toSync, { onConflict: 'id' });
 
       if (error) {
-        logger.error("Migration Failed", {
+        logger.error("Migration Batch Failed", {
           message: error.message,
           code: error.code,
           status
         });
       } else {
-        logger.info(`Migration Successful: Pushed ${toSync.length} questions. Status: ${status}`);
+        logger.info(`Migration Success: ${toSync.length} questions merged.`);
       }
     } catch (e) {
       logger.error("Migration Exception", e);
