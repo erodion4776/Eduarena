@@ -102,6 +102,16 @@ export default function ExamArena() {
   }, []);
 
   useEffect(() => {
+    const handleVaultSync = () => {
+      logger.info("Real-time sync detected. Refreshing Vault Counter...");
+      fetchGlobalVaultStats();
+    };
+
+    window.addEventListener('VAULT_SYNCED', handleVaultSync);
+    return () => window.removeEventListener('VAULT_SYNCED', handleVaultSync);
+  }, []);
+
+  useEffect(() => {
     setVaultSize(cacheService.getVaultStats().total);
     fetchGlobalVaultStats();
   }, [currentQuestion]);
@@ -211,7 +221,7 @@ export default function ExamArena() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white p-4 md:p-8 font-sans selection:bg-emerald-500/30">
+    <div className="min-h-screen bg-[#050505] text-white p-4 md:p-8 font-sans selection:bg-emerald-500/30 overflow-x-hidden w-full">
       <div className="max-w-5xl mx-auto space-y-6">
         
         {/* Navigation Escape */}
@@ -231,9 +241,9 @@ export default function ExamArena() {
         </div>
 
         {/* --- STEP 3: NEURAL LINK STATUS BAR --- */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-6 py-3 bg-emerald-500/5 border border-emerald-500/20 rounded-full backdrop-blur-xl">
-          <div className="flex items-center gap-3">
-            <div className="relative">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-4 md:px-6 py-3 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl md:rounded-full backdrop-blur-xl">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="relative shrink-0">
               <ShieldCheck className="w-5 h-5 text-emerald-400" />
               <motion.div 
                 animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
@@ -241,32 +251,32 @@ export default function ExamArena() {
                 className="absolute inset-0 bg-emerald-400 rounded-full"
               />
             </div>
-            <span className="text-xs font-black uppercase tracking-widest text-emerald-400/80">
-              Status: Connected to National Question Bank
+            <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-emerald-400/80 line-clamp-1">
+              Status: Connected to National Bank
             </span>
           </div>
           
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center justify-center md:justify-end gap-3 md:gap-6 w-full md:w-auto">
              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">NODE_ID</span>
-                <span className="text-xs font-mono text-zinc-300">ARENA_77</span>
+                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">NODE_ID</span>
+                <span className="text-[10px] md:text-xs font-mono text-zinc-300">ARENA_77</span>
              </div>
-             <div className="h-4 w-px bg-zinc-800" />
+             <div className="hidden md:block h-4 w-px bg-zinc-800" />
              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">LATENCY</span>
-                <span className="text-xs font-mono text-emerald-500">24ms</span>
+                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">LATENCY</span>
+                <span className="text-[10px] md:text-xs font-mono text-emerald-500">24ms</span>
              </div>
-             <div className="h-4 w-px bg-zinc-800" />
+             <div className="hidden md:block h-4 w-px bg-zinc-800" />
              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">GLOBAL_VAULT</span>
-                <span className="text-xs font-mono text-cyan-400">{globalVaultCount ?? '...'}</span>
+                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">GLOBAL_VAULT</span>
+                <span className="text-[10px] md:text-xs font-mono text-cyan-400">{globalVaultCount ?? '...'}</span>
              </div>
-             <div className="h-4 w-px bg-zinc-800" />
+             <div className="hidden md:block h-4 w-px bg-zinc-800" />
              <button 
                onClick={() => setShowLogs(!showLogs)}
                className="flex items-center gap-2 hover:bg-zinc-800 px-2 py-0.5 rounded transition-colors"
              >
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">CLOUD_LOGS</span>
+                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">CLOUD_LOGS</span>
                 <Terminal className={`w-3 h-3 ${showLogs ? 'text-emerald-500' : 'text-zinc-500'}`} />
              </button>
           </div>
@@ -328,19 +338,19 @@ export default function ExamArena() {
           
           <div className="lg:col-span-12 space-y-6">
             {/* Header / Selection */}
-            <div className="flex flex-wrap items-center justify-between gap-4">
-               <div>
-                  <h1 className="text-4xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-zinc-500">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+               <div className="text-center md:text-left">
+                  <h1 className="text-3xl md:text-5xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-zinc-500">
                     LIVE_NEURAL_HUB
                   </h1>
-                  <p className="text-zinc-500 text-sm font-medium mt-1 uppercase tracking-widest">Deep Learning Exam Simulation</p>
+                  <p className="text-zinc-500 text-xs md:text-sm font-medium mt-1 uppercase tracking-widest">Deep Learning Exam Simulation</p>
                </div>
                
-               <div className="flex items-center gap-2 bg-zinc-900/50 p-1 rounded-xl border border-white/5">
+               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-zinc-900/50 p-2 rounded-2xl border border-white/5 w-full md:w-auto">
                   <select 
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
-                    className="bg-transparent text-xs font-bold uppercase p-2 focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors"
+                    className="bg-zinc-800/50 md:bg-transparent text-[10px] md:text-xs font-black uppercase p-3 md:p-2 rounded-xl focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors text-center md:text-left"
                   >
                     <option value="english">English</option>
                     <option value="mathematics">Mathematics</option>
@@ -354,25 +364,22 @@ export default function ExamArena() {
                     <option value="accounting">Accounting</option>
                     <option value="currentaffairs">Current Affairs</option>
                   </select>
-                  <div className="w-px h-4 bg-zinc-800" />
+                  <div className="hidden sm:block w-px h-4 bg-zinc-800 self-center" />
                   <select 
                     value={examType}
                     onChange={(e) => setExamType(e.target.value)}
-                    className="bg-transparent text-xs font-bold uppercase p-2 focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors"
+                    className="bg-zinc-800/50 md:bg-transparent text-[10px] md:text-xs font-black uppercase p-3 md:p-2 rounded-xl focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors text-center md:text-left"
                   >
                     <option value="utme">JAMB (UTME)</option>
                     <option value="waec">WAEC</option>
                     <option value="neco">NECO</option>
                     <option value="post-utme">Post-UTME</option>
                   </select>
-                  <div className="w-px h-4 bg-zinc-800" />
+                  <div className="hidden sm:block w-px h-4 bg-zinc-800 self-center" />
                   <select 
                     value={year}
-                    onChange={(e) => {
-                      setYear(e.target.value);
-                      // fetchNewQuestion will be triggered by useEffect
-                    }}
-                    className="bg-transparent text-xs font-bold uppercase p-2 focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors"
+                    onChange={(e) => setYear(e.target.value)}
+                    className="bg-zinc-800/50 md:bg-transparent text-[10px] md:text-xs font-black uppercase p-3 md:p-2 rounded-xl focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors text-center md:text-left"
                   >
                     <option value="">All Years</option>
                     {Array.from({ length: 30 }, (_, i) => 2024 - i).map(y => (
@@ -385,7 +392,7 @@ export default function ExamArena() {
             {/* --- STEP 3: QUESTION CARD (GLASSMORPHISM) --- */}
             <div className="relative group">
                <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-3xl blur opacity-10 group-hover:opacity-20 transition duration-1000" />
-               <div className="relative bg-zinc-900/40 backdrop-blur-3xl border border-white/10 rounded-3xl p-8 min-h-[300px] flex flex-col justify-between">
+               <div className="relative bg-zinc-900/40 backdrop-blur-3xl border border-white/10 rounded-2xl md:rounded-3xl p-4 md:p-8 min-h-[300px] flex flex-col justify-between">
                   {loading ? (
                     <div className="flex-1 flex items-center justify-center">
                       <RefreshCw className="w-12 h-12 text-zinc-700 animate-spin" />
@@ -511,23 +518,25 @@ export default function ExamArena() {
                     </div>
                   )}
 
-                  <div className="flex flex-wrap items-center gap-4 mt-12 pt-8 border-t border-white/5">
+                  <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 md:mt-12 pt-8 border-t border-white/5">
                     <button 
                       onClick={() => fetchNewQuestion(false)}
                       disabled={loading}
-                      className="flex items-center gap-3 bg-white text-black px-6 py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                      className="w-full sm:w-auto flex items-center justify-center gap-3 bg-white text-black px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 transition-colors disabled:opacity-50"
                     >
                       <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                      {currentIndex < questionQueue.length - 1 ? `Next Question (${currentIndex + 2}/${questionQueue.length})` : 'Shuffle Node'}
+                      <span className="text-xs md:text-sm">
+                        {currentIndex < questionQueue.length - 1 ? `Next (${currentIndex + 2}/${questionQueue.length})` : 'Shuffle Node'}
+                      </span>
                     </button>
 
                     {/* --- STEP 3: THE AI BUTTON --- */}
                     <button 
                       onClick={() => runNeuralAnalysis()}
-                      className="flex items-center gap-3 bg-emerald-500 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-emerald-400 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)]"
+                      className="w-full sm:w-auto flex items-center justify-center gap-3 bg-emerald-500 text-white px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-emerald-400 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)]"
                     >
                       <BrainCircuit className="w-5 h-5" />
-                      Neural Analysis
+                      <span className="text-xs md:text-sm">Neural Analysis</span>
                     </button>
                   </div>
                </div>

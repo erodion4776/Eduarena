@@ -67,38 +67,38 @@ export default function Dashboard() {
     
     // The "MOCK ARENA" Dashboard Home
     return (
-      <div className="flex flex-col gap-10 font-sans relative z-10 px-6 pt-12 pb-24 max-w-6xl mx-auto">
+      <div className="flex flex-col gap-8 md:gap-10 font-sans relative z-10 px-4 md:px-6 pt-8 md:pt-12 pb-24 max-w-6xl mx-auto overflow-x-hidden">
         {/* Welcome Section */}
-        <section className="space-y-6">
-           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-950/40 border border-cyan-500/30 text-cyan-400 text-xs font-black uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(34,211,238,0.15)]">
-             <Zap className="w-4 h-4 text-cyan-300" /> Neural Link Established
+        <section className="space-y-4 md:space-y-6">
+           <div className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full bg-cyan-950/40 border border-cyan-500/30 text-cyan-400 text-[10px] md:text-xs font-black uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(34,211,238,0.15)]">
+             <Zap className="w-3.5 h-3.5 md:w-4 h-4 text-cyan-300" /> Neural Link Established
            </div>
-           <h1 className="text-5xl md:text-7xl font-black text-white tracking-tight leading-[1.1]">
+           <h1 className="text-4xl md:text-7xl font-black text-white tracking-tight leading-[1.1]">
              Welcome Boss, <br className="md:hidden" />
-             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 italic">
+             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 italic block md:inline">
                {user?.name?.split(' ')[0] || 'Scholar'}
              </span>.
            </h1>
-           <p className="text-xl text-slate-400 max-w-3xl font-medium leading-relaxed">
+           <p className="text-base md:text-xl text-slate-400 max-w-3xl font-medium leading-relaxed">
              I noticed your <span className="text-rose-400 font-bold">Biology</span> score dropped slightly. I've prepared a refresh on <span className="text-cyan-400 font-bold underline underline-offset-4 decoration-cyan-500/50">Cell Biology</span> to bridge the gap.
            </p>
         </section>
 
         {/* Action Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 auto-rows-[minmax(300px,_auto)]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:gap-6 lg:auto-rows-[minmax(300px,_auto)]">
            {/* Card 1: ENTER THE ARENA (spanning 7 cols) */}
-           <div className="lg:col-span-7 group relative flex flex-col justify-between p-10 rounded-[2.5rem] bg-gradient-to-br from-cyan-900/40 to-blue-950/40 border border-cyan-500/30 overflow-hidden shadow-2xl transition-all hover:border-cyan-500/60">
-              <div className="absolute top-0 right-0 p-8 opacity-20 group-hover:opacity-40 transition-opacity">
-                <Swords className="w-32 h-32 text-cyan-400 -rotate-12" />
+           <div className="lg:col-span-7 group relative flex flex-col justify-between p-8 md:p-10 rounded-3xl md:rounded-[2.5rem] bg-gradient-to-br from-cyan-900/40 to-blue-950/40 border border-cyan-500/30 overflow-hidden shadow-2xl transition-all hover:border-cyan-500/60">
+              <div className="absolute top-0 right-0 p-4 md:p-8 opacity-10 md:opacity-20 group-hover:opacity-40 transition-opacity pointer-events-none">
+                <Swords className="w-24 h-24 md:w-32 md:h-32 text-cyan-400 -rotate-12" />
               </div>
               <div className="relative z-10">
-                <h3 className="text-3xl font-black text-white uppercase tracking-tighter mb-4">Enter the Arena</h3>
-                <p className="text-slate-300 text-lg max-w-xs leading-snug">Simulate JAMB, WAEC, or NECO conditions in a precision CBT environment.</p>
+                <h3 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tighter mb-3 md:mb-4">Enter the Arena</h3>
+                <p className="text-slate-300 text-base md:text-lg max-w-xs leading-snug">Simulate JAMB, WAEC, or NECO conditions in a precision CBT environment.</p>
               </div>
-              <div className="relative z-10 mt-8">
+              <div className="relative z-10 mt-6 md:mt-8">
                  <Button 
                    onClick={() => navigate('/arena')}
-                   className="h-16 px-10 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-lg uppercase tracking-widest shadow-[0_0_30px_rgba(34,211,238,0.4)] group-hover:shadow-[0_0_50px_rgba(34,211,238,0.6)] transition-all flex items-center gap-3"
+                   className="h-14 md:h-16 w-full sm:w-auto px-8 md:px-10 rounded-xl md:rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-base md:text-lg uppercase tracking-widest shadow-[0_0_30px_rgba(34,211,238,0.4)] group-hover:shadow-[0_0_50px_rgba(34,211,238,0.6)] transition-all flex items-center justify-center gap-3"
                  >
                    Start CBT <ArrowRight className="w-5 h-5" />
                  </Button>
@@ -106,36 +106,36 @@ export default function Dashboard() {
            </div>
 
            {/* Card 2: NEURAL TUTORIALS (spanning 5 cols) */}
-           <div className="lg:col-span-5 p-8 rounded-[2.5rem] bg-slate-900/60 backdrop-blur-xl border border-white/10 flex flex-col justify-between hover:border-emerald-500/30 transition-all group">
+           <div className="lg:col-span-5 p-7 md:p-8 rounded-3xl md:rounded-[2.5rem] bg-slate-900/60 backdrop-blur-xl border border-white/10 flex flex-col justify-between hover:border-emerald-500/30 transition-all group">
               <div>
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 flex items-center justify-center mb-6 border border-emerald-500/30">
-                  <BookOpen className="w-6 h-6 text-emerald-400" />
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-emerald-500/20 flex items-center justify-center mb-5 md:mb-6 border border-emerald-500/30">
+                  <BookOpen className="w-5 h-5 md:w-6 md:h-6 text-emerald-400" />
                 </div>
-                <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-3">Neural Tutorials</h3>
-                <p className="text-slate-400 leading-relaxed">Study with Tutor Chuks. AI-powered explanations indexed from the latest official textbooks.</p>
+                <h3 className="text-xl md:text-2xl font-black text-white uppercase tracking-tighter mb-2 md:mb-3">Neural Tutorials</h3>
+                <p className="text-slate-400 text-sm md:text-base leading-relaxed">Study with Tutor Chuks. AI-powered explanations indexed from the latest official textbooks.</p>
               </div>
-              <div className="mt-6 flex items-center gap-4 text-emerald-400 font-bold text-sm group-hover:translate-x-2 transition-transform cursor-pointer">
+              <div className="mt-5 md:mt-6 flex items-center gap-4 text-emerald-400 font-bold text-xs md:text-sm group-hover:translate-x-2 transition-transform cursor-pointer">
                  OPEN HUB <ArrowRight className="w-4 h-4" />
               </div>
            </div>
 
            {/* Card 3: TOPIC MASTERY (spanning 12 cols) */}
-           <div className="lg:col-span-12 p-10 rounded-[2.5rem] bg-zinc-950/40 backdrop-blur-3xl border border-white/5 relative overflow-hidden">
-              <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-4">
+           <div className="lg:col-span-12 p-8 md:p-10 rounded-3xl md:rounded-[2.5rem] bg-zinc-950/40 backdrop-blur-3xl border border-white/5 relative overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 md:mb-10 gap-4">
                  <div>
-                    <h3 className="text-2xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
-                      <Target className="w-6 h-6 text-rose-500" /> Topic Mastery
+                    <h3 className="text-xl md:text-2xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
+                      <Target className="w-5 h-5 md:w-6 md:h-6 text-rose-500" /> Topic Mastery
                     </h3>
-                    <p className="text-zinc-500 text-sm mt-1">Syllabus coverage based on active Neural Analytics</p>
+                    <p className="text-zinc-500 text-xs md:text-sm mt-1">Syllabus coverage based on active Neural Analytics</p>
                  </div>
-                 <div className="flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                 <div className="inline-flex self-start sm:self-auto items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[9px] md:text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
                     <Activity className="w-3 h-3 text-emerald-500" /> Live Updates
                  </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 md:gap-6">
                  {subjects.map((sub, i) => (
-                    <div key={i} className="space-y-3">
+                    <div key={i} className="space-y-2 md:space-y-3">
                        <div className="flex justify-between items-end">
                           <span className="text-sm font-black text-zinc-300 uppercase tracking-wider">{sub.name}</span>
                           <span className={`text-xs font-mono font-bold ${sub.progress > 80 ? 'text-emerald-400' : sub.progress > 60 ? 'text-cyan-400' : 'text-rose-400'}`}>
@@ -175,7 +175,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-cyan-500/30 relative overflow-hidden transition-colors duration-1000">
+    <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-cyan-500/30 relative overflow-x-hidden transition-colors duration-1000 w-full md:overflow-visible">
       {/* Heavy Cyber Background Ambience */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute top-0 left-1/4 w-[800px] h-[800px] bg-cyan-600/10 rounded-full blur-[150px] mix-blend-screen" />
@@ -187,8 +187,8 @@ export default function Dashboard() {
         <Navbar />
         
         {/* Main Navigation */}
-        <div className="max-w-7xl mx-auto px-6 pt-8 flex flex-col md:flex-row gap-6">
-          <div className="flex-1 w-full overflow-x-auto pb-4 hide-scrollbar">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 pt-6 md:pt-8 flex flex-col md:flex-row gap-6">
+          <div className="flex-1 w-full overflow-x-auto pb-4 md:pb-0 hide-scrollbar">
             <Tabs value={view} onValueChange={(v) => {
               if (v === 'admin-arena') {
                 navigate('/admin/arena');

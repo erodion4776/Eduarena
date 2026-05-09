@@ -108,19 +108,24 @@ export const questionRouter = {
         question_data: question
       };
 
-      const { data, error, status } = await supabase
+      const { error, status } = await supabase
         .from('global_questions_vault')
-        .upsert(payload, { onConflict: 'id' })
-        .select();
+        .upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        logger.error("Global Vault Sync Error", {
-          message: error.message,
-          code: error.code,
-          status
-        });
+        if (status === 401 || status === 403 || error.code === '42501') {
+          logger.error("🛑 SECURITY_VIOLATION: Check Supabase RLS Policies. Permission Denied.", { status, code: error.code });
+        } else {
+          logger.error("Global Vault Sync Error", {
+            message: error.message,
+            code: error.code,
+            status
+          });
+        }
       } else {
         logger.info(`Question ID ${question.id} synced successfully.`);
+        // Dispatch event for real-time UI refresh
+        window.dispatchEvent(new CustomEvent('VAULT_SYNCED'));
       }
     } catch (e) {
       logger.error("Cloud Bridge Critical Exception during Sync", e);
@@ -129,6 +134,7 @@ export const questionRouter = {
 
   /**
    * One-time migration: Pushes any locally cached questions to Supabase if they aren't there.
+   * Optimized with batch sync (5 items per batch)
    */
   async migrateLocalToGlobal() {
     if (!supabase) {
@@ -144,7 +150,6 @@ export const questionRouter = {
       }
       
       const localVault: ALOCQuestion[] = JSON.parse(vaultStr);
-      // Ensure we only try to sync valid questions with IDs
       const validQuestions = localVault.filter(q => q && q.id);
       
       if (validQuestions.length === 0) {
@@ -152,28 +157,39 @@ export const questionRouter = {
         return;
       }
 
-      logger.info(`Migration starting for ${validQuestions.length} items...`);
+      logger.info(`Migration starting for ${validQuestions.length} items in batches of 5...`);
       
-      const toSync = validQuestions.map(q => ({
-        id: q.id,
-        subject: (q.subject || 'unknown').toLowerCase(),
-        exam_type: (q.examType || 'unknown').toLowerCase(),
-        question_data: q
-      }));
+      // Batch sync Logic
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < validQuestions.length; i += BATCH_SIZE) {
+        const batch = validQuestions.slice(i, i + BATCH_SIZE);
+        const toSync = batch.map(q => ({
+          id: q.id,
+          subject: (q.subject || 'unknown').toLowerCase(),
+          exam_type: (q.examType || 'unknown').toLowerCase(),
+          question_data: q
+        }));
 
-      const { error, status } = await supabase
-        .from('global_questions_vault')
-        .upsert(toSync, { onConflict: 'id' });
+        const { error, status } = await supabase
+          .from('global_questions_vault')
+          .upsert(toSync, { onConflict: 'id' });
 
-      if (error) {
-        logger.error("Migration Batch Failed", {
-          message: error.message,
-          code: error.code,
-          status
-        });
-      } else {
-        logger.info(`Migration Success: ${toSync.length} questions merged.`);
+        if (error) {
+          if (status === 401 || status === 403 || error.code === '42501') {
+            logger.error("🛑 BATCH_SYNC_SECURITY_ERROR: Check RLS Policies.", { status, code: error.code });
+            break; // Stop migration if RLS is blocking us
+          }
+          logger.error(`Migration Batch [${i/BATCH_SIZE}] Failed`, { message: error.message, code: error.code });
+        } else {
+          logger.info(`Sync Cluster [${i/BATCH_SIZE + 1}] merged successfully.`);
+        }
+        
+        // Brief pause to avoid rate limits
+        await new Promise(r => setTimeout(r, 100));
       }
+      
+      logger.info("Full Migration Sequence Complete.");
+      window.dispatchEvent(new CustomEvent('VAULT_SYNCED'));
     } catch (e) {
       logger.error("Migration Exception", e);
     }
