@@ -20,22 +20,17 @@ export default function Dashboard() {
   const { mode, setMode } = useThemeStore();
   const navigate = useNavigate();
   const [view, setView] = useState<View>('dashboard');
-  const [isArenaOpen, setIsArenaOpen] = useState(false);
 
   useEffect(() => {
     setMode('arena'); // Force dark cyber mode everywhere
   }, [setMode]);
-
-  if (isArenaOpen) {
-    return <ExamArena onExit={() => setIsArenaOpen(false)} />;
-  }
 
   const renderView = () => {
     if (view === 'hub') return <KnowledgeHub />;
     if (view === 'solutions') return <SolutionsEngine initialSolutionId={null} />;
     if (view === 'oracle') return <ExamOracle />;
     if (view === 'lounge') return <ScholarLounge />;
-
+    
     // The AI-Driven Dashboard Home
     return (
       <div className="flex flex-col gap-12 font-sans relative z-10 px-6 pt-12 pb-24 max-w-6xl mx-auto">
@@ -100,7 +95,7 @@ export default function Dashboard() {
            {/* Enter The Arena */}
            <div className="col-span-1 flex flex-col justify-end h-full">
               <Button 
-                 onClick={() => setIsArenaOpen(true)}
+                 onClick={() => navigate('/arena')}
                  className="relative group h-full min-h-[200px] w-full overflow-hidden rounded-[40px] border border-cyan-500/50 bg-gradient-to-br from-cyan-950/40 to-blue-900/20 hover:scale-[1.02] transition-all duration-500 backdrop-blur-xl flex flex-col items-center justify-center gap-6 p-0 shadow-[0_0_30px_rgba(34,211,238,0.15)] hover:shadow-[0_0_50px_rgba(34,211,238,0.3)]"
               >
                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-cyan-400/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />

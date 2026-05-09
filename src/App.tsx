@@ -8,6 +8,7 @@ import Dashboard from '@/src/pages/Dashboard';
 import AdminPage from '@/src/pages/Admin';
 import AdminArena from '@/src/pages/AdminArena';
 import AlocHarvester from '@/src/pages/AlocHarvester';
+import ExamArena from '@/src/pages/ExamArena';
 import { Toaster } from '@/components/ui/sonner';
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/arena" element={<ExamArena />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/admin/arena" element={<AdminArena />} />
         <Route path="/admin/harvester" element={<AlocHarvester />} />
