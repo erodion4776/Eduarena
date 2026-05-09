@@ -4,10 +4,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Search, HelpCircle, ChevronRight, MessageSquare, Brain, Eye, EyeOff, Filter, BookOpen } from 'lucide-react';
+import { Search, HelpCircle, ChevronRight, MessageSquare, Brain, Eye, EyeOff, Filter, BookOpen, PlayCircle } from 'lucide-react';
 import { useThemeStore } from '@/src/store/useThemeStore';
 import { useAIStore } from '@/src/store/useAIStore';
 import { getGroupedQuestions, ENGLISH_ARCHIVE, JambQuestion } from '@/src/data/englishArchive';
+import CBTSimulator from './CBTSimulator';
 
 export default function KnowledgeHub() {
   const { mode } = useThemeStore();
@@ -15,6 +16,7 @@ export default function KnowledgeHub() {
   const [search, setSearch] = useState('');
   const [selectedYear, setSelectedYear] = useState<string | 'All'>('All');
   const [revealedAnswers, setRevealedAnswers] = useState<Record<number, boolean>>({});
+  const [showSimulator, setShowSimulator] = useState(false);
 
   const groupedData = useMemo(() => getGroupedQuestions(), []);
   const allYears = useMemo(() => ['All', ...groupedData.map(g => g.year)], [groupedData]);
@@ -51,6 +53,10 @@ export default function KnowledgeHub() {
     });
     if (!isChatOpen) toggleChat();
   };
+
+  if (showSimulator) {
+    return <CBTSimulator onBack={() => setShowSimulator(false)} />;
+  }
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
@@ -93,7 +99,16 @@ export default function KnowledgeHub() {
               <p className="text-slate-400 text-sm font-medium tracking-wide">Hardcoded Engine. Zero Latency. Pure Knowledge.</p>
             </div>
             
-            <div className="relative group w-full md:w-96">
+            <div className="flex items-center gap-4 w-full md:w-auto">
+              <Button 
+                onClick={() => setShowSimulator(true)}
+                className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-2xl gap-2 px-6 h-12 shadow-lg shadow-cyan-500/20 group"
+              >
+                <PlayCircle className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                Start Mock Exam
+              </Button>
+
+              <div className="relative group w-full md:w-96">
               <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-emerald-500 rounded-2xl blur opacity-20 group-focus-within:opacity-40 transition duration-500" />
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
@@ -106,7 +121,8 @@ export default function KnowledgeHub() {
               </div>
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
         {/* Scrollable List */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">

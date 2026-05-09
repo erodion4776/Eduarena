@@ -21,13 +21,15 @@ async function callWithRetry(prompt: string, config: any, retries = 2): Promise<
     if (!ai) throw new Error("AI services unavailable");
 
     for (let i = 0; i <= retries; i++) {
-        const modelName = i === 0 ? PRIMARY_MODEL : FALLBACK_MODEL;
+        const modelName = i === 0 ? "gemini-3-flash-preview" : "gemini-3.1-pro-preview";
         try {
-            const model = ai.getGenerativeModel({ model: modelName, generationConfig: config });
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
+            const response = await ai.models.generateContent({
+                model: modelName,
+                contents: prompt,
+                config: config
+            });
             return {
-                text: response.text()
+                text: response.text
             };
         } catch (error) {
             console.error(`Attempt ${i+1} failed with ${modelName}:`, error);

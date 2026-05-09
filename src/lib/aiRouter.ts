@@ -49,13 +49,14 @@ export const aiRouter = {
       const geminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
       if (geminiKey) {
         const genAI = new GoogleGenAI({ apiKey: geminiKey });
-        const model = genAI.getGenerativeModel({ 
-            model: 'gemini-1.5-flash',
-            systemInstruction
+        const response = await genAI.models.generateContent({ 
+            model: 'gemini-3-flash-preview',
+            contents: fullPrompt,
+            config: {
+                systemInstruction
+            }
         });
-        const result = await model.generateContent(fullPrompt);
-        const response = await result.response;
-        const text = response.text();
+        const text = response.text;
         if (text) return { answer: text.trim(), provider: 'gemini', source: finalContext ? "Exam Bank" : undefined };
       }
     } catch (e) {
