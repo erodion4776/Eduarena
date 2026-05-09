@@ -60,7 +60,7 @@ export default function DataHarvester() {
     setIsHarvesting(true);
     stopRequested.current = false;
     setLogs([]);
-    addLog(`INIT HARVEST PROTOCOL v2.0.1 [${subjectsInQueue.length} SUBJECTS IN QUEUE]`, 'info');
+    addLog(`INIT HARVEST PROTOCOL v2.0.2 [${subjectsInQueue.length} SUBJECTS IN QUEUE]`, 'info');
     
     try {
       addLog('BOOTING VIRTUAL SQL_ENGINE...', 'info');
@@ -110,7 +110,8 @@ export default function DataHarvester() {
           if (stopRequested.current) break;
 
           try {
-            const response = await fetch(`https://questions.aloc.ng/api/v2/q?subject=${currentSub.toLowerCase()}`, {
+            const url = `https://questions.aloc.com.ng/api/v2/q?subject=${currentSub.toLowerCase()}&type=${exam.toLowerCase()}`;
+            const response = await fetch(url, {
               headers: { 
                 'Accept': 'application/json', 
                 'AccessToken': token.trim() 
@@ -123,10 +124,16 @@ export default function DataHarvester() {
                 await new Promise(r => setTimeout(r, 10000));
                 continue;
               }
+              const errText = await response.text();
+              addLog(`API_REJECT [${response.status}]: ${errText.slice(0, 50)}`, 'error');
               break;
             }
 
             const data = await response.json();
+            if (!data || !data.data) {
+                addLog(`EMPTY_PAYLOAD [${currentSub}]`, 'warning');
+                continue;
+            }
             const q = data.data;
 
             if (seenIds.has(q.id)) {
