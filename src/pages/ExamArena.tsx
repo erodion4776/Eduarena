@@ -17,6 +17,7 @@ import { ALOCQuestion, TutorResponse } from '../types';
 import { cacheService } from '../lib/cacheService';
 import { questionRouter } from '../lib/questionRouter';
 import { supabase } from '../lib/supabase';
+import { logger } from '../lib/logger';
 
 export default function ExamArena() {
   const [currentQuestion, setCurrentQuestion] = useState<ALOCQuestion | null>(null);
@@ -33,6 +34,13 @@ export default function ExamArena() {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [vaultSize, setVaultSize] = useState(0);
   const [globalVaultCount, setGlobalVaultCount] = useState<number | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
+  const [debugLogs, setDebugLogs] = useState(logger.getLogs());
+
+  useEffect(() => {
+    const unsubscribe = logger.subscribe(setDebugLogs);
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     setVaultSize(cacheService.getVaultStats().total);
@@ -45,19 +53,29 @@ export default function ExamArena() {
   }, []);
 
   const fetchGlobalVaultStats = async () => {
-    if (!supabase) return;
+    if (!supabase) {
+      logger.warn("Stats Fetch Skipped: Supabase not initialized.");
+      return;
+    }
+    
+    logger.info("Checking Global Vault size...");
     try {
-      const { count, error } = await supabase
+      const { count, error, status } = await supabase
         .from('global_questions_vault')
         .select('*', { count: 'exact', head: true });
       
       if (!error) {
+        logger.info(`Stats Fetch Success: Found ${count} items.`);
         setGlobalVaultCount(count);
       } else {
-        console.warn("Stats Fetch Error:", error.message);
+        logger.error("Stats Fetch Error", {
+          message: error.message,
+          code: error.code,
+          status
+        });
       }
     } catch (e) {
-      console.error("Global Stats Exception:", e);
+      logger.error("Global Stats Exception", e);
     }
   };
 
@@ -166,12 +184,52 @@ export default function ExamArena() {
                 <span className="text-xs font-mono text-cyan-400">{globalVaultCount ?? '...'}</span>
              </div>
              <div className="h-4 w-px bg-zinc-800" />
-             <div className="flex items-center gap-2">
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">LOCAL_CACHE</span>
-                <span className="text-xs font-mono text-orange-400">{vaultSize}</span>
-             </div>
+             <button 
+               onClick={() => setShowLogs(!showLogs)}
+               className="flex items-center gap-2 hover:bg-zinc-800 px-2 py-0.5 rounded transition-colors"
+             >
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">CLOUD_LOGS</span>
+                <Terminal className={`w-3 h-3 ${showLogs ? 'text-emerald-500' : 'text-zinc-500'}`} />
+             </button>
           </div>
         </div>
+
+        <AnimatePresence>
+          {showLogs && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="px-6 pb-4 overflow-hidden"
+            >
+              <div className="bg-black/50 border border-zinc-800 rounded-lg p-3 font-mono text-[10px]">
+                 <div className="flex justify-between items-center mb-2 border-b border-zinc-800 pb-1">
+                    <span className="text-zinc-500 font-bold">BRIDGE_DIAGNOSTICS</span>
+                    <button onClick={() => setShowLogs(false)} className="text-zinc-600 hover:text-white">CLOSE</button>
+                 </div>
+                 <div className="max-h-40 overflow-y-auto custom-scrollbar flex flex-col gap-1">
+                    {debugLogs.length === 0 && <div className="text-zinc-700 italic">No logs yet...</div>}
+                    {debugLogs.map((log, i) => (
+                      <div key={i} className="flex gap-2 leading-relaxed">
+                        <span className="text-zinc-700 shrink-0">{log.timestamp}</span>
+                        <span className={`shrink-0 font-bold ${
+                          log.level === 'error' ? 'text-red-500' : 
+                          log.level === 'warn' ? 'text-orange-500' : 
+                          'text-cyan-500'
+                        }`}>[{log.level.toUpperCase()}]</span>
+                        <span className="text-zinc-300 break-all">{log.message}</span>
+                        {log.details && (
+                          <span className="text-zinc-600 italic">
+                            ({JSON.stringify(log.details)})
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                 </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* --- MAIN CONTENT AREA --- */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

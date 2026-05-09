@@ -3,6 +3,7 @@ import { ALOCQuestion } from '../types';
 import { supabase } from './supabase';
 import { alocService } from './alocService';
 import { cacheService } from './cacheService';
+import { logger } from './logger';
 
 /**
  * Question Router: Intelligent Fetching Layer
@@ -18,7 +19,7 @@ export const questionRouter = {
     if (localSubjectCount > 20 && Math.random() < 0.4) {
       const cachedLocal = cacheService.fetchFromLocalVault(subject, type, year);
       if (cachedLocal) {
-        console.log("Question retrieved from Local Cache");
+        logger.info("Question retrieved from Local Cache");
         return { ...cachedLocal, source: 'vault' };
       }
     }
@@ -54,7 +55,7 @@ export const questionRouter = {
             .single();
 
           if (!error && data) {
-            console.log("Question retrieved from Global Vault");
+            logger.info("Question retrieved from Global Vault");
             const q = data.question_data as ALOCQuestion;
             return {
               ...q,
@@ -65,12 +66,12 @@ export const questionRouter = {
       }
 
       // 4. Fallback or 30% fetch fresh from ALOC API
-      console.log("Fetching fresh question from Satellite (ALOC API)");
+      logger.info("Fetching fresh question from Satellite (ALOC API)");
       const freshBatch = await alocService.fetchLiveQuestions(subject, type, year, 1);
       const freshQuestion = freshBatch[0];
 
       // 5. Async Sync: Upsert to Global Vault & Local Cache
-      this.syncToGlobalVault(freshQuestion).catch(console.error);
+      this.syncToGlobalVault(freshQuestion).catch(e => logger.error("Async Sync Failed", e));
       cacheService.saveToLocalVault(freshQuestion);
 
       return {
@@ -79,7 +80,7 @@ export const questionRouter = {
       };
 
     } catch (err) {
-      console.error("Smart Router Error:", err);
+      logger.error("Smart Router Error", err);
       const backup = await alocService.fetchLiveQuestions(subject, type, year, 1);
       const q = backup[0];
       cacheService.saveToLocalVault(q);
@@ -89,27 +90,35 @@ export const questionRouter = {
 
   async syncToGlobalVault(question: ALOCQuestion) {
     if (!supabase) {
-      console.warn("Supabase Sync Skipped: Client not configured. Check VITE_SUPABASE keys.");
+      logger.warn("Supabase Sync Skipped: Client not configured.");
       return;
     }
 
+    logger.info(`Attempting to sync Question ID ${question.id}...`);
     try {
-      const { error } = await supabase
+      const payload = {
+        id: question.id,
+        subject: (question.subject || 'unknown').toLowerCase(),
+        exam_type: question.examType.toLowerCase(),
+        question_data: question
+      };
+
+      const { data, error, status } = await supabase
         .from('global_questions_vault')
-        .upsert({
-          id: question.id,
-          subject: (question.subject || 'unknown').toLowerCase(),
-          exam_type: question.examType.toLowerCase(),
-          question_data: question
-        }, { onConflict: 'id' });
+        .upsert(payload, { onConflict: 'id' })
+        .select();
 
       if (error) {
-        console.error("❌ Global Vault Sync Error:", error.message, error.details);
+        logger.error("Global Vault Sync Error", {
+          message: error.message,
+          code: error.code,
+          status
+        });
       } else {
-        console.log(`✅ Cloud Bridge: Question ID ${question.id} synced to Global Vault.`);
+        logger.info(`Question ID ${question.id} synced. Status: ${status}`);
       }
     } catch (e) {
-      console.error("❌ Cloud Bridge Exception:", e);
+      logger.error("Cloud Bridge Critical Exception", e);
     }
   },
 
@@ -117,19 +126,27 @@ export const questionRouter = {
    * One-time migration: Pushes any locally cached questions to Supabase if they aren't there.
    */
   async migrateLocalToGlobal() {
-    if (!supabase) return;
+    if (!supabase) {
+      logger.warn("Migration Aborted: Supabase not initialized.");
+      return;
+    }
     
-    console.log("🛠️ Cloud Bridge: Checking for Local -> Global migration...");
+    logger.info("Starting migration check...");
     try {
-      const localStats = cacheService.getVaultStats();
-      if (localStats.total === 0) return;
-
       const vaultStr = localStorage.getItem('EDU_ARENA_LOCAL_VAULT');
-      if (!vaultStr) return;
+      if (!vaultStr) {
+        logger.info("No items found in Local Cache to migrate.");
+        return;
+      }
       
       const localVault: ALOCQuestion[] = JSON.parse(vaultStr);
+      if (localVault.length === 0) {
+        logger.info("Local Cache is empty.");
+        return;
+      }
+
+      logger.info(`Preparing migration for ${localVault.length} items...`);
       
-      // Batch upsert to be efficient
       const toSync = localVault.map(q => ({
         id: q.id,
         subject: (q.subject || 'unknown').toLowerCase(),
@@ -137,18 +154,22 @@ export const questionRouter = {
         question_data: q
       }));
 
-      // Supabase supports bulk upsert
-      const { error } = await supabase
+      const { data, error, status } = await supabase
         .from('global_questions_vault')
-        .upsert(toSync, { onConflict: 'id' });
+        .upsert(toSync, { onConflict: 'id' })
+        .select();
 
       if (error) {
-        console.error("❌ Migration Error:", error.message);
+        logger.error("Migration Failed", {
+          message: error.message,
+          code: error.code,
+          status
+        });
       } else {
-        console.log(`🚀 Migration Successful: Pushed ${toSync.length} questions to Global Vault.`);
+        logger.info(`Migration Successful: Pushed ${toSync.length} questions. Status: ${status}`);
       }
     } catch (e) {
-      console.error("❌ Migration Exception:", e);
+      logger.error("Migration Exception", e);
     }
   }
 };
