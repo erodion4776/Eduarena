@@ -62,7 +62,7 @@ export default function AdminArena() {
     setUploadProgress([]);
     
     try {
-      await ragService.processPDFToVectors(file, uploadSubject, uploadTopic, (msg) => {
+      await ragService.processPDF(file, uploadSubject, uploadTopic, (msg) => {
         setUploadProgress(prev => [...prev, msg]);
       });
     } catch (e: any) {
@@ -85,10 +85,10 @@ export default function AdminArena() {
         const text = e.target?.result as string;
         const data = JSON.parse(text);
         if (!Array.isArray(data)) {
-          throw new Error("JSON file must contain an array of questions.");
+          throw new Error("JSON file must contain an array of objects.");
         }
 
-        await questionImportService.importQuestionsBatch(data, (msg) => {
+        await ragService.processJSON(data, (msg) => {
           setImportProgress(prev => [...prev, msg]);
         });
       } catch (err: any) {
@@ -140,7 +140,7 @@ export default function AdminArena() {
 
     try {
       const context = await ragService.retrieveContext(query);
-      const res = await aiRouter.askTutorChuks(query, context || undefined);
+      const res = await aiRouter.askTutorChuks(query, simResults.filter(r => r.role !== 'ai').map(r => ({ sender: 'student', text: r.text })));
       
       setSimResults(prev => [...prev, { 
         role: 'ai', 

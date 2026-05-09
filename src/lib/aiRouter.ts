@@ -2,7 +2,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { Groq } from 'groq-sdk';
 import { HfInference } from '@huggingface/inference';
-import { supabase } from './supabase';
+import { getRelevantContext } from './memoryManager';
 
 interface AIResponse {
   answer: string;
@@ -10,108 +10,98 @@ interface AIResponse {
   provider: string;
 }
 
+interface Message {
+  sender: 'tutor' | 'student';
+  text: string;
+}
+
 export const aiRouter = {
-  async askTutorChuks(prompt: string, context?: string): Promise<AIResponse> {
-    let finalContext = context || "";
+  async askTutorChuks(prompt: string, history: Message[] = []): Promise<AIResponse> {
+    // 1. Fetch relevant context from Supabase (RAG)
+    const retrievedKnowledge = await getRelevantContext(prompt);
+    
+    // 2. Format Chat History (Last 5 messages)
+    const chatHistoryContext = history.slice(-5).map(m => 
+      `${m.sender === 'student' ? 'Student' : 'Tutor'}: ${m.text}`
+    ).join("\n");
 
-    // 1. Fetch relevant context from local API if prompt looks like a question or greeting
-    if (!context && prompt.length > 2) {
-        try {
-            const apiRes = await fetch(`/api/ai/query?q=${encodeURIComponent(prompt)}`);
-            const apiData = await apiRes.json();
-            if (apiData.context) {
-                finalContext = apiData.context;
-            }
-        } catch (e) {
-            console.warn("Context API fetch failed", e);
-        }
-    }
+    const systemInstruction = `Act as Tutor Chuks, a brilliant and direct Nigerian tutor. 
+Focus strictly on exam success. Use relatable Nigerian analogies but stay professional.
+Retrieved Knowledge: ${retrievedKnowledge || "No specific database entry found. Use your general training."}
+Conversation History:
+${chatHistoryContext}
 
-    const fullPrompt = finalContext 
-      ? `USER QUERY: "${prompt}"
-         DATABASE CONTEXT: [${finalContext}]
-         
-         Act as Tutor Chuks, a concise Nigerian tutor.
-         - Answer DIRECTLY using the context.
-         - If context is empty, say you don't know the exact past question but explain the general concept.
-         - Keep it under 100 words.`
-      : `USER QUERY: "${prompt}"
-         
-         Act as Tutor Chuks, a snappy Nigerian tutor.
-         - For greetings, be politely brief.
-         - For general help, give one smart analogy.
-         - No rambling. Under 60 words.`;
+Rules:
+- Be concise (Under 100 words).
+- If specific past questions are in the 'Retrieved Knowledge', refer to them.
+- If the student asks something outside of academics, politely guide them back to their studies.`;
 
-    const systemInstruction = "Act as Tutor Chuks, a brilliant but direct Nigerian tutor. Focus strictly on exam success. No long introductory chatter.";
+    const fullPrompt = `Student Query: ${prompt}`;
 
-    // 1. Attempt Gemini
+    // 1. Attempt Gemini (Primary)
     try {
       const geminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
       if (geminiKey) {
         const genAI = new GoogleGenAI({ apiKey: geminiKey });
-        const response = await genAI.models.generateContent({ 
-            model: 'gemini-3-flash-preview',
-            contents: fullPrompt,
-            config: {
-                systemInstruction
-            }
+        const result = await genAI.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
+          config: {
+            systemInstruction
+          }
         });
-        const text = response.text;
-        if (text) return { answer: text.trim(), provider: 'gemini', source: finalContext ? "Exam Bank" : undefined };
+        const text = result.text;
+        if (text) return { answer: text.trim(), provider: 'gemini', source: retrievedKnowledge ? "Edu Vault" : undefined };
       }
     } catch (e) {
-      console.warn("Gemini failed, trying Groq...", e);
+      console.warn("Gemini Level 1 Failed. Cascading to Groq...", e);
     }
 
-    // 2. Fallback to Groq
+    // 2. Fallback to Groq (Level 2)
     try {
-      const groqKey = (import.meta as any).env.VITE_GROQ_API_KEY || (import.meta as any).env.VITE_GROK_API_KEY;
+      const groqKey = (import.meta as any).env.VITE_GROQ_API_KEY;
       if (groqKey) {
         const groq = new Groq({ apiKey: groqKey, dangerouslyAllowBrowser: true });
-        const chatCompletion = await groq.chat.completions.create({
+        const completion = await groq.chat.completions.create({
           messages: [
-              { role: "system", content: systemInstruction },
-              { role: "user", content: fullPrompt }
+            { role: "system", content: systemInstruction },
+            { role: "user", content: fullPrompt }
           ],
           model: "llama-3.3-70b-versatile",
+          max_completion_tokens: 300
         });
-        if (chatCompletion.choices[0]?.message?.content) {
-          return { answer: chatCompletion.choices[0].message.content, provider: 'groq', source: finalContext ? "Exam Bank" : undefined };
-        }
+        const text = completion.choices[0]?.message?.content;
+        if (text) return { answer: text.trim(), provider: 'groq', source: retrievedKnowledge ? "Edu Vault" : undefined };
       }
     } catch (e) {
-      console.warn("Groq failed, trying Hugging Face...", e);
+      console.warn("Groq Level 2 Failed. Cascading to Hugging Face...", e);
     }
 
-    // 3. Fallback to Hugging Face
+    // 3. Fallback to Hugging Face (Level 3 - Last Stand)
     try {
       const hfKey = (import.meta as any).env.VITE_HF_API_KEY;
       if (hfKey) {
         const hf = new HfInference(hfKey);
         const response = await hf.textGeneration({
-          model: 'meta-llama/Llama-3.1-8B-Instruct',
+          model: 'meta-llama/Llama-3.2-3B-Instruct',
           inputs: `<|system|>\n${systemInstruction}<|user|>\n${fullPrompt}<|assistant|>`,
           parameters: { max_new_tokens: 300 }
         });
         if (response.generated_text) {
-          return { answer: response.generated_text.trim(), provider: 'huggingface', source: finalContext ? "Exam Bank" : undefined };
+          return { answer: response.generated_text.trim(), provider: 'huggingface', source: retrievedKnowledge ? "Edu Vault" : undefined };
         }
       }
     } catch (e) {
-      console.error("All AI providers failed:", e);
+      console.error("All AI providers reached critical failure.", e);
     }
 
-    // Final fallback (Keep it short as requested)
     return {
-      answer: finalContext 
-        ? `Boss, the bank says: ${finalContext.substring(0, 100)}... Let's use this for now!`
-        : `Ah ah, we are on it! Just keep pushing, we'll conquer. Ask me something specific about JAMB or Biology!`,
-      provider: 'simulated'
+      answer: "Omo, network is behaving somehow! But look, keep studying. If you can't reach me, check your textbooks for a bit, I'll be back online shortly.",
+      provider: 'emergency-fallback'
     };
-
   },
 
   async getIntervention(topic: string): Promise<AIResponse> {
-    return this.askTutorChuks(`Explain ${topic}`, topic);
+    return this.askTutorChuks(`Explain ${topic}`, []);
   }
 };

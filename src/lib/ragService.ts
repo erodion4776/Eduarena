@@ -1,12 +1,15 @@
 import { supabase } from './supabase';
 import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenAI } from '@google/genai';
+import { HfInference } from '@huggingface/inference';
 
 // Define worker source for pdf.js using Vite's URL handling
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url
 ).toString();
+
+const hfKey = (import.meta as any).env.VITE_HF_API_KEY;
 
 function chunkText(text: string, maxWords: number = 200): string[] {
   const words = text.split(/\s+/);
@@ -19,18 +22,51 @@ function chunkText(text: string, maxWords: number = 200): string[] {
 
 export const ragService = {
   /**
-   * Processes a PDF: chunking text and syncing to Supabase pgvector.
+   * Generates embedding for a piece of text with fallback
    */
-  async processPDFToVectors(file: File, subject: string, topic: string, onProgress: (msg: string) => void): Promise<void> {
-    if (!supabase) {
-      throw new Error("Supabase is not configured. Please check your .env file.");
+  async getEmbedding(text: string): Promise<number[]> {
+    const geminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
+    
+    // 1. Try Gemini Embedding
+    if (geminiKey) {
+      try {
+        const genAI = new GoogleGenAI({ apiKey: geminiKey });
+        const response = await genAI.models.embedContent({
+          model: "text-embedding-004",
+          contents: text,
+        });
+        return response.embeddings[0].values;
+      } catch (e) {
+        console.warn("Gemini Embedding failed, falling back to HF...", e);
+      }
     }
 
+    // 2. Fallback to Hugging Face
+    if (hfKey) {
+      try {
+        const hf = new HfInference(hfKey);
+        const output = await hf.featureExtraction({
+          model: 'sentence-transformers/all-MiniLM-L6-v2',
+          inputs: text,
+        }) as number[];
+        return output;
+      } catch (e) {
+        console.error("Hugging Face Embedding failed:", e);
+      }
+    }
+
+    throw new Error("No embedding provider available");
+  },
+
+  /**
+   * Processes a PDF into knowledge chunks.
+   */
+  async processPDF(file: File, subject: string, topic: string, onProgress: (msg: string) => void): Promise<void> {
+    if (!supabase) throw new Error("Supabase missing");
+
     try {
-      onProgress('Initiating file reader...');
+      onProgress('READING_PDF_METADATA...');
       const arrayBuffer = await file.arrayBuffer();
-      
-      onProgress('Extracting text content from PDF...');
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       let fullText = '';
       
@@ -38,120 +74,90 @@ export const ragService = {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const pageText = textContent.items.map((item: any) => item.str).join(' ');
-        fullText += pageText + '\n';
+        fullText += pageText + ' ';
       }
 
-      onProgress(`Chunking text (${fullText.length} characters)...`);
-      const chunks = chunkText(fullText, 250); // 250 words per chunk
+      const chunks = chunkText(fullText, 300);
+      onProgress(`EXTRACTED_CHUNKS: ${chunks.length}`);
 
-      onProgress('Saving document record to Supabase...');
-      // 1. Insert into pdf_documents
-      const { data: docData, error: docError } = await supabase
-        .from('pdf_documents')
-        .insert([{ title: file.name, subject }])
-        .select()
-        .single();
-
-      if (docError) {
-         console.warn("Supabase insertion error. Ensure you have RLS INSERT policies set!", docError);
-         throw new Error(`Failed to save document. Did you enable RLS INSERT? Details: ${docError.message}`);
-      }
-
-      const documentId = docData.id;
-
-      onProgress('Generating Embeddings and Syncing vectors to Supabase...');
-      // 2. Embed and Insert chunks
       for (let i = 0; i < chunks.length; i++) {
-        const chunkTextValue = chunks[i];
-        if (!chunkTextValue.trim()) continue;
-
-        onProgress(`Processing chunk ${i + 1} of ${chunks.length}...`);
+        onProgress(`NEURAL_INGESTION [${i+1}/${chunks.length}]`);
+        const embedding = await this.getEmbedding(chunks[i]);
         
-        // Call Gemini for embedding directly
-        const geminiKey = process.env.GEMINI_API_KEY;
-        if (!geminiKey || geminiKey === 'undefined') {
-          throw new Error("Gemini Key Missing");
-        }
-
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
-        const response = await ai.models.embedContent({
-          model: 'gemini-embedding-2-preview',
-          contents: chunkTextValue,
-        });
-
-        if (!response.embeddings || response.embeddings.length === 0) {
-           throw new Error(`Failed to generate embedding for chunk ${i+1}`);
-        }
-        
-        const embedding = response.embeddings[0].values;
-
-        // Insert into document_chunks
-        const { error: chunkError } = await supabase
-          .from('document_chunks')
+        const { error } = await supabase
+          .from('knowledge_vault')
           .insert([{
-            document_id: documentId,
-            subject,
-            topic,
-            content: chunkTextValue,
-            source: `Page chunks starting near part ${i + 1}`,
-            embedding
+            content: chunks[i],
+            embedding,
+            metadata: { 
+              source: file.name, 
+              subject, 
+              topic,
+              type: 'pdf_chunk'
+            }
           }]);
 
-        if (chunkError) {
-          throw new Error('Failed to insert chunk into Supabase: ' + chunkError.message);
-        }
+        if (error) throw error;
       }
-
-      onProgress('COMPLETE: Neural ingestion successful.');
+      onProgress('INGESTION_PROTOCOL_COMPLETE');
     } catch (e: any) {
-      console.error(e);
-      onProgress(`ERROR: ${e.message || 'Processing failed'}. Check console for details.`);
+      onProgress(`INGESTION_FAIL: ${e.message}`);
       throw e;
     }
   },
 
   /**
-   * Retrieving context from the actual Supabase Vector database
+   * Processes JSON data into knowledge vectors.
    */
-  async retrieveContext(question: string, subjectFilter?: string): Promise<string | null> {
-    if (!supabase) return "Supabase not configured.";
+  async processJSON(data: any[], onProgress: (msg: string) => void): Promise<void> {
+    if (!supabase) throw new Error("Supabase missing");
 
     try {
-      // 1. Get embedding for the question
-      const geminiKey = process.env.GEMINI_API_KEY;
-      if (!geminiKey || geminiKey === 'undefined') {
-        throw new Error("Gemini Key Missing");
-      }
+      onProgress(`NEURAL_LOADER: READYING ${data.length} OBJECTS`);
+      
+      for (let i = 0; i < data.length; i++) {
+        const q = data[i];
+        const textToEmbed = `${q.question_content || q.question} ${q.explanation || ''} ${q.correct_answer || ''}`;
+        
+        onProgress(`EMBEDDING_OBJECT [${i+1}/${data.length}]`);
+        const embedding = await this.getEmbedding(textToEmbed);
+        
+        const { error } = await supabase
+          .from('knowledge_vault')
+          .insert([{
+            content: textToEmbed,
+            embedding,
+            metadata: {
+              ...q,
+              type: 'json_data'
+            }
+          }]);
 
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
-      const response = await ai.models.embedContent({
-        model: 'gemini-embedding-2-preview',
-        contents: question,
+        if (error) throw error;
+      }
+      onProgress('DATA_VAULT_SYNCHRONIZED');
+    } catch (e: any) {
+      onProgress(`LOAD_ABORTED: ${e.message}`);
+      throw e;
+    }
+  },
+
+  /**
+   * Legacy retrieval maintained for compat
+   */
+  async retrieveContext(query: string): Promise<string | null> {
+    // We already have memoryManager for this, but let's point here if needed
+    try {
+      const embedding = await this.getEmbedding(query);
+      const { data, error } = await supabase!.rpc('match_knowledge', {
+        query_embedding: embedding,
+        match_threshold: 0.5,
+        match_count: 5
       });
 
-      if (!response.embeddings || response.embeddings.length === 0) return null;
-      const queryEmbedding = response.embeddings[0].values;
-
-      // 2. Call the match_document_chunks RPC in Supabase
-      const { data, error } = await supabase.rpc('match_document_chunks', {
-        query_embedding: queryEmbedding,
-        match_threshold: 0.70, // Adjust this higher for stricter matches
-        match_count: 3,
-        filter_subject: subjectFilter || null
-      });
-
-      if (error) {
-        console.error("Vector search error:", error);
-        return null;
-      }
-
-      if (data && data.length > 0) {
-        return data.map((d: any) => `[From ${d.topic}]: ${d.content}`).join('\n\n');
-      }
-
-      return null;
-    } catch (e) {
-      console.error("Failed to retrieve context", e);
+      if (error || !data) return null;
+      return data.map((d: any) => d.content).join('\n\n');
+    } catch {
       return null;
     }
   }

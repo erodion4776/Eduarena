@@ -24,7 +24,7 @@ export default function AIChatWidget() {
     setInput('');
     setIsTyping(true);
 
-    const res = await aiRouter.askTutorChuks(userMsg.text);
+    const res = await aiRouter.askTutorChuks(userMsg.text, messages);
     
     setIsTyping(false);
     addMessage({
