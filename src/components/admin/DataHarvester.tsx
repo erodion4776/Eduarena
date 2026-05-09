@@ -60,13 +60,17 @@ export default function DataHarvester() {
     setIsHarvesting(true);
     stopRequested.current = false;
     setLogs([]);
-    addLog(`INIT HARVEST PROTOCOL v2.0.0 [${subjectsInQueue.length} SUBJECTS IN QUEUE]`, 'info');
+    addLog(`INIT HARVEST PROTOCOL v2.0.1 [${subjectsInQueue.length} SUBJECTS IN QUEUE]`, 'info');
     
     try {
       addLog('BOOTING VIRTUAL SQL_ENGINE...', 'info');
       
+      const wasmRes = await fetch('https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/sql-wasm.wasm');
+      if (!wasmRes.ok) throw new Error('WASM_LOAD_FAILURE: CDN unreachable');
+      const wasmBinary = await wasmRes.arrayBuffer();
+
       const SQL = await initSqlJs({
-        locateFile: file => `https://unpkg.com/sql.js@1.12.0/dist/${file}`
+        wasmBinary
       });
       
       const db = new SQL.Database();
