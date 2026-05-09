@@ -25,9 +25,18 @@ export default function Navbar() {
         <div className="flex items-center gap-6">
           {user && (
             <div className="flex items-center gap-4">
-              <div className="hidden md:flex flex-col items-end">
-                <span className={`text-sm font-bold ${mode === 'arena' ? 'text-white' : 'text-slate-900'}`}>{user.name}</span>
-                <span className="text-xs text-slate-500">Lvl {user.level} • {user.points} pts</span>
+              <div className="hidden md:flex items-center gap-2">
+                <div className="flex flex-col items-end">
+                  <span className={`text-sm font-black uppercase tracking-wider ${mode === 'arena' ? 'text-white' : 'text-slate-900'}`}>{user.name}</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-black text-cyan-400 uppercase tracking-tighter">
+                      Lv. {user.level}
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-black text-emerald-400 uppercase tracking-tighter">
+                      {user.points} PTS
+                    </span>
+                  </div>
+                </div>
               </div>
               <Button variant="ghost" size="icon" onClick={() => logout()}>
                 <LogOut className={`w-5 h-5 ${mode === 'arena' ? 'text-green-500' : 'text-slate-600'}`} />

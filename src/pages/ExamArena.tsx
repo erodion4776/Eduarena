@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Zap, 
@@ -11,7 +12,9 @@ import {
   ShieldCheck,
   AlertCircle,
   Volume2,
-  Square
+  Square,
+  Home,
+  ChevronLeft
 } from 'lucide-react';
 import { alocService } from '../lib/alocService';
 import { aiTutor } from '../lib/aiTutor';
@@ -23,6 +26,7 @@ import { logger } from '../lib/logger';
 import { voiceService } from '../lib/voiceService';
 
 export default function ExamArena() {
+  const navigate = useNavigate();
   const [currentQuestion, setCurrentQuestion] = useState<ALOCQuestion | null>(null);
   const [questionQueue, setQuestionQueue] = useState<ALOCQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -208,8 +212,24 @@ export default function ExamArena() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-white p-4 md:p-8 font-sans selection:bg-emerald-500/30">
-      <div className="max-w-5xl mx-auto space-y-8">
+      <div className="max-w-5xl mx-auto space-y-6">
         
+        {/* Navigation Escape */}
+        <div className="flex items-center justify-between">
+           <button 
+             onClick={() => navigate('/')}
+             className="group flex items-center gap-3 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all"
+           >
+              <ChevronLeft className="w-4 h-4 text-zinc-500 group-hover:text-cyan-400 transition-colors" />
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 group-hover:text-white transition-colors">Return to HQ</span>
+           </button>
+
+           <div className="flex items-center gap-2">
+              <Home className="w-4 h-4 text-zinc-700" />
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-700">Sector: Arena_Command</span>
+           </div>
+        </div>
+
         {/* --- STEP 3: NEURAL LINK STATUS BAR --- */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-6 py-3 bg-emerald-500/5 border border-emerald-500/20 rounded-full backdrop-blur-xl">
           <div className="flex items-center gap-3">

@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Database, Cpu, ServerCrash, UploadCloud, CheckCircle2, ChevronRight, Lock, Command, Terminal, Sparkles } from 'lucide-react';
+import { Shield, Database, Cpu, ServerCrash, UploadCloud, CheckCircle2, ChevronRight, Lock, Command, Terminal, Sparkles, LayoutDashboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { create } from 'zustand';
@@ -21,6 +22,7 @@ const useAdminArenaStore = create<AdminArenaState>((set) => ({
 }));
 
 export default function AdminArena() {
+  const navigate = useNavigate();
   const { isUnlocked, unlock } = useAdminArenaStore();
   const [passcode, setPasscode] = useState('');
   const [isShake, setIsShake] = useState(false);
@@ -202,9 +204,18 @@ export default function AdminArena() {
 
       {/* Top Navigation */}
       <div className="h-16 border-b border-white/5 bg-black/50 backdrop-blur-2xl flex items-center justify-between px-6 sticky top-0 z-50">
-         <div className="flex items-center gap-3 text-white">
-            <Command className="w-5 h-5 text-rose-500" />
-            <h1 className="font-black tracking-[0.2em] uppercase text-sm">Arena Command</h1>
+         <div className="flex items-center gap-6">
+            <button 
+              onClick={() => navigate('/')}
+              className="p-2 hover:bg-white/5 rounded-lg border border-white/5 text-zinc-500 hover:text-white transition-colors"
+              title="Return to HQ"
+            >
+               <LayoutDashboard className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-3 text-white divider-l pl-6 border-l border-white/10">
+               <Command className="w-5 h-5 text-rose-500" />
+               <h1 className="font-black tracking-[0.2em] uppercase text-sm">Arena Command</h1>
+            </div>
          </div>
          <div className="flex items-center gap-4">
             <Button 
