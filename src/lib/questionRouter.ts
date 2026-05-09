@@ -88,7 +88,10 @@ export const questionRouter = {
   },
 
   async syncToGlobalVault(question: ALOCQuestion) {
-    if (!supabase) return;
+    if (!supabase) {
+      console.warn("Supabase Sync Skipped: Client not configured. Check VITE_SUPABASE keys.");
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -100,10 +103,52 @@ export const questionRouter = {
           question_data: question
         }, { onConflict: 'id' });
 
-      if (error) console.error("Global Vault Sync Error:", error);
-      else console.log(`Question ID ${question.id} synced to Global Vault.`);
+      if (error) {
+        console.error("❌ Global Vault Sync Error:", error.message, error.details);
+      } else {
+        console.log(`✅ Cloud Bridge: Question ID ${question.id} synced to Global Vault.`);
+      }
     } catch (e) {
-      console.error("Sync Exception:", e);
+      console.error("❌ Cloud Bridge Exception:", e);
+    }
+  },
+
+  /**
+   * One-time migration: Pushes any locally cached questions to Supabase if they aren't there.
+   */
+  async migrateLocalToGlobal() {
+    if (!supabase) return;
+    
+    console.log("🛠️ Cloud Bridge: Checking for Local -> Global migration...");
+    try {
+      const localStats = cacheService.getVaultStats();
+      if (localStats.total === 0) return;
+
+      const vaultStr = localStorage.getItem('EDU_ARENA_LOCAL_VAULT');
+      if (!vaultStr) return;
+      
+      const localVault: ALOCQuestion[] = JSON.parse(vaultStr);
+      
+      // Batch upsert to be efficient
+      const toSync = localVault.map(q => ({
+        id: q.id,
+        subject: (q.subject || 'unknown').toLowerCase(),
+        exam_type: q.examType.toLowerCase(),
+        question_data: q
+      }));
+
+      // Supabase supports bulk upsert
+      const { error } = await supabase
+        .from('global_questions_vault')
+        .upsert(toSync, { onConflict: 'id' });
+
+      if (error) {
+        console.error("❌ Migration Error:", error.message);
+      } else {
+        console.log(`🚀 Migration Successful: Pushed ${toSync.length} questions to Global Vault.`);
+      }
+    } catch (e) {
+      console.error("❌ Migration Exception:", e);
     }
   }
 };

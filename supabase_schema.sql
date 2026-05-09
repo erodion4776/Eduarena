@@ -126,5 +126,20 @@ create policy "Allow public read access to pdf_documents" on public.pdf_document
 drop policy if exists "Allow public insert to pdf_documents" on public.pdf_documents;
 create policy "Allow public insert to pdf_documents" on public.pdf_documents for insert with check (true);
 
-drop policy if exists "Allow public insert to document_chunks" on public.document_chunks;
-create policy "Allow public insert to document_chunks" on public.document_chunks for insert with check (true);
+-- 11. Global Questions Vault (Community-driven cache)
+create table public.global_questions_vault (
+  id bigint primary key, -- The ALOC Question ID
+  subject text not null,
+  exam_type text not null,
+  question_data jsonb not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- RLS for Global Vault
+alter table public.global_questions_vault enable row level security;
+create policy "Allow public read access to global_questions_vault" on public.global_questions_vault for select using (true);
+create policy "Allow public insert/upsert to global_questions_vault" on public.global_questions_vault for insert with check (true);
+create policy "Allow public update to global_questions_vault" on public.global_questions_vault for update using (true);
+
+create index idx_subject on public.global_questions_vault(subject);
+create index idx_exam_type on public.global_questions_vault(exam_type);

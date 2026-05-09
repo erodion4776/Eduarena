@@ -39,12 +39,26 @@ export default function ExamArena() {
     fetchGlobalVaultStats();
   }, [currentQuestion]);
 
+  // Handle Cloud Migration on Initial Load
+  useEffect(() => {
+    questionRouter.migrateLocalToGlobal();
+  }, []);
+
   const fetchGlobalVaultStats = async () => {
     if (!supabase) return;
-    const { count } = await supabase
-      .from('global_questions_vault')
-      .select('*', { count: 'exact', head: true });
-    setGlobalVaultCount(count);
+    try {
+      const { count, error } = await supabase
+        .from('global_questions_vault')
+        .select('*', { count: 'exact', head: true });
+      
+      if (!error) {
+        setGlobalVaultCount(count);
+      } else {
+        console.warn("Stats Fetch Error:", error.message);
+      }
+    } catch (e) {
+      console.error("Global Stats Exception:", e);
+    }
   };
 
   useEffect(() => {
