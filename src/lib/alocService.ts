@@ -1,4 +1,3 @@
-
 import { ALOCQuestion } from '../types';
 
 /**
@@ -43,17 +42,17 @@ export const alocService = {
 
         return {
           ...q,
-          image: imgUrl
+          image: imgUrl,
+          subject: subject,
+          source: 'live' as const
         };
       };
 
-      // If count is 1, data.data is a single question. 
-      // If count > 1, data.data is an array of questions.
-      if (Array.isArray(data.data)) {
-        return data.data.map(normalizeQuestion);
-      } else {
-        return [normalizeQuestion(data.data)];
-      }
+      const normalized = Array.isArray(data.data) 
+        ? data.data.map(normalizeQuestion) 
+        : [normalizeQuestion(data.data)];
+
+      return normalized;
     } catch (error) {
       console.error("ALOC Service Error:", error);
       throw error;

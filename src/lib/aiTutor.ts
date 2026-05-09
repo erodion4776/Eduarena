@@ -3,15 +3,19 @@ import { Groq } from 'groq-sdk';
 import { HfInference } from '@huggingface/inference';
 
 import { ALOCQuestion, TutorResponse } from '../types';
+import { cacheService } from './cacheService';
 
 export const aiTutor = {
   async askTutorChuksLive(userQuery: string, question: ALOCQuestion): Promise<TutorResponse> {
+    const stats = cacheService.getVaultStats();
     const geminiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
     const groqKey = (import.meta as any).env.VITE_GROQ_API_KEY;
     const hfKey = (import.meta as any).env.VITE_HF_API_KEY;
 
     const apiDataContext = `
 [HIDDEN_KNOWLEDGE: ALOC_API_SOURCE]
+DATA_SOURCE: ${question.source === 'vault' ? "GLOBAL_VAULT" : "LIVE_SATELLITE"}
+VAULT_TOTAL: ${stats.total}
 SECTION/INSTRUCTION: ${question.section || "N/A"}
 PASSAGE: ${question.passage || "N/A"}
 QUESTION: ${question.question}
@@ -23,6 +27,7 @@ YEAR: ${question.examyear}
 
     const systemInstruction = `You are Tutor Chuks, a brilliant and direct Nigerian teacher. 
 Use the following API data to help the student: ${apiDataContext}.
+Mention subtly that the system is getting smarter (we have synced questions to the global vault).
 Explain why the correct answer is ${question.answer.toUpperCase()} using a relatable Nigerian analogy.
 Be extremely concise (under 80 words). Speak like a mentor.`;
 

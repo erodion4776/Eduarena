@@ -7,9 +7,11 @@ export interface ALOCQuestion {
   solution: string;
   examType: string;
   examyear: string;
+  subject?: string;
   image?: string;
   section?: string;
   passage?: string;
+  source?: 'live' | 'vault';
 }
 
 export interface TutorResponse {

@@ -14,6 +14,9 @@ import {
 import { alocService } from '../lib/alocService';
 import { aiTutor } from '../lib/aiTutor';
 import { ALOCQuestion, TutorResponse } from '../types';
+import { cacheService } from '../lib/cacheService';
+import { questionRouter } from '../lib/questionRouter';
+import { supabase } from '../lib/supabase';
 
 export default function ExamArena() {
   const [currentQuestion, setCurrentQuestion] = useState<ALOCQuestion | null>(null);
@@ -28,6 +31,21 @@ export default function ExamArena() {
   const [year, setYear] = useState('');
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [vaultSize, setVaultSize] = useState(0);
+  const [globalVaultCount, setGlobalVaultCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    setVaultSize(cacheService.getVaultStats().total);
+    fetchGlobalVaultStats();
+  }, [currentQuestion]);
+
+  const fetchGlobalVaultStats = async () => {
+    if (!supabase) return;
+    const { count } = await supabase
+      .from('global_questions_vault')
+      .select('*', { count: 'exact', head: true });
+    setGlobalVaultCount(count);
+  };
 
   useEffect(() => {
     fetchNewQuestion(true); // Always fresh fetch on filters change
@@ -49,14 +67,17 @@ export default function ExamArena() {
     }
 
     try {
-      // Fetch a batch of 20 for consistency
-      const batchSize = 25;
-      const questions = await alocService.fetchLiveQuestions(subject, examType, year, batchSize);
+      // Use Smart Router for fetching
+      // Since router currently returns one, we'll just fetch one or loop
+      // Given the user request to "use this getSmartQuestion logic", 
+      // we'll prioritize single smart fetches but can still batch if needed.
+      // For now, let's just fetch one to stay true to the "Source" badge logic.
+      const question = await questionRouter.getSmartQuestion(subject, examType, year);
       
-      if (questions && questions.length > 0) {
-        setQuestionQueue(questions);
+      if (question) {
+        setQuestionQueue([question]);
         setCurrentIndex(0);
-        setCurrentQuestion(questions[0]);
+        setCurrentQuestion(question);
       } else {
         setCurrentQuestion(null);
       }
@@ -124,6 +145,16 @@ export default function ExamArena() {
              <div className="flex items-center gap-2">
                 <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">LATENCY</span>
                 <span className="text-xs font-mono text-emerald-500">24ms</span>
+             </div>
+             <div className="h-4 w-px bg-zinc-800" />
+             <div className="flex items-center gap-2">
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">GLOBAL_VAULT</span>
+                <span className="text-xs font-mono text-cyan-400">{globalVaultCount ?? '...'}</span>
+             </div>
+             <div className="h-4 w-px bg-zinc-800" />
+             <div className="flex items-center gap-2">
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">LOCAL_CACHE</span>
+                <span className="text-xs font-mono text-orange-400">{vaultSize}</span>
              </div>
           </div>
         </div>
@@ -206,6 +237,9 @@ export default function ExamArena() {
                         <div className="flex items-center gap-2">
                            <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest border border-emerald-500/20">
                              {currentQuestion.examType} {currentQuestion.examyear}
+                           </span>
+                           <span className={`text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest border ${currentQuestion.source === 'vault' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                             {currentQuestion.source === 'vault' ? 'GLOBAL VAULT' : 'LIVE SATELLITE (ALOC)'}
                            </span>
                            <span className="text-zinc-600 font-mono text-[10px]">ID: {currentQuestion.id}</span>
                         </div>
@@ -324,6 +358,14 @@ export default function ExamArena() {
                   <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                   <span className="text-[10px] text-zinc-600 font-mono">LIVE_FEED</span>
                </div>
+               {currentQuestion && (
+                 <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-zinc-600 font-mono">SOURCE:</span>
+                    <span className={`text-[10px] font-mono ${currentQuestion.source === 'vault' ? 'text-cyan-400' : 'text-emerald-500'}`}>
+                      {currentQuestion.source?.toUpperCase() || 'LIVE'}
+                    </span>
+                 </div>
+               )}
             </div>
           </div>
           <div className="p-6 font-mono grid grid-cols-1 md:grid-cols-2 gap-6 h-[300px] overflow-y-auto custom-scrollbar">
