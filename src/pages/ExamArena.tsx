@@ -39,6 +39,13 @@ export default function ExamArena() {
   const [year, setYear] = useState('');
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  
+  // -- NEW STATE FOR EXAM FEATURES --
+  const [examMode, setExamMode] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
+  
   const [vaultSize, setVaultSize] = useState(0);
   const [globalVaultCount, setGlobalVaultCount] = useState<number | null>(null);
   const [showLogs, setShowLogs] = useState(false);
@@ -46,15 +53,13 @@ export default function ExamArena() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
-  const [imageRetry, setImageRetry] = useState(0); // 0: questions/, 1: root storage, 2: failed
+  const [imageRetry, setImageRetry] = useState(0);
 
   const IMAGE_BASE_URL = 'https://questions.aloc.com.ng/storage/';
 
   const getImageUrl = () => {
     if (!currentQuestion?.image || currentQuestion.image.trim() === "") return '';
     if (currentQuestion.image.startsWith('http')) return currentQuestion.image;
-    
-    // Universal logic: try root storage directly
     return `https://questions.aloc.com.ng/storage/${currentQuestion.image}`;
   };
 
@@ -64,25 +69,16 @@ export default function ExamArena() {
       subject: "physics",
       examType: "UTME",
       examyear: "2024",
-      question: "Calculate the total resistance in the circuit shown below. This is a Neural Hub visual demonstration to prove diagram rendering.",
-      option: {
-        a: "5.0 Ω",
-        b: "10.0 Ω",
-        c: "15.0 Ω",
-        d: "20.0 Ω",
-        e: ""
-      },
+      question: "Calculate the total resistance in the circuit shown below.",
+      option: { a: "5.0 Ω", b: "10.0 Ω", c: "15.0 Ω", d: "20.0 Ω", e: "" },
       answer: "a",
-      solution: "In a parallel circuit, the total resistance is calculated using the reciprocal formula. This demo uses a high-quality external image to verify that the Neural Hub interface correctly renders diagrams regardless of the source.",
+      solution: "...",
       image: "https://www.allaboutcircuits.com/uploads/articles/three-resistor-parallel-circuit.jpg",
       source: "vault"
     };
     setCurrentQuestion(demoQuestion);
     setQuestionQueue([demoQuestion]);
     setCurrentIndex(0);
-    setImageError(false);
-    setImageLoading(true);
-    setAiResponse(null);
     logger.info("🎬 Demo Mode: Loading hardcoded visual test question.");
   };
 
@@ -90,6 +86,16 @@ export default function ExamArena() {
     logger.error(`Image failed to render: ${getImageUrl()}`);
     setImageError(true);
   };
+
+  // Timer effect
+  useEffect(() => {
+    if (examMode && !isSubmitted && timeLeft > 0) {
+      const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+      return () => clearInterval(timer);
+    } else if (timeLeft === 0 && !isSubmitted) {
+      setIsSubmitted(true);
+    }
+  }, [examMode, isSubmitted, timeLeft]);
 
   useEffect(() => {
     voiceService.setChangeListener(setIsSpeaking);
@@ -106,7 +112,6 @@ export default function ExamArena() {
       logger.info("Real-time sync detected. Refreshing Vault Counter...");
       fetchGlobalVaultStats();
     };
-
     window.addEventListener('VAULT_SYNCED', handleVaultSync);
     return () => window.removeEventListener('VAULT_SYNCED', handleVaultSync);
   }, []);
@@ -116,40 +121,24 @@ export default function ExamArena() {
     fetchGlobalVaultStats();
   }, [currentQuestion]);
 
-  // Handle Cloud Migration on Initial Load
   useEffect(() => {
     questionRouter.migrateLocalToGlobal();
   }, []);
 
   const fetchGlobalVaultStats = async () => {
-    if (!supabase) {
-      logger.warn("Stats Fetch Skipped: Supabase not initialized.");
-      return;
-    }
-    
-    logger.info("Checking Global Vault size...");
+    if (!supabase) return;
     try {
-      const { count, error, status } = await supabase
+      const { count } = await supabase
         .from('global_questions_vault')
         .select('*', { count: 'exact', head: true });
-      
-      if (!error) {
-        logger.info(`Stats Fetch Success: Found ${count} items.`);
-        setGlobalVaultCount(count);
-      } else {
-        logger.error("Stats Fetch Error", {
-          message: error.message,
-          code: error.code,
-          status
-        });
-      }
+      if (count !== null) setGlobalVaultCount(count);
     } catch (e) {
       logger.error("Global Stats Exception", e);
     }
   };
 
   useEffect(() => {
-    fetchNewQuestion(true); // Always fresh fetch on filters change
+    fetchNewQuestion(true);
   }, [subject, examType, year]);
 
   const fetchNewQuestion = async (isFreshBatch: boolean = false, subjectOverride?: string) => {
@@ -157,7 +146,6 @@ export default function ExamArena() {
     setAiResponse(null);
     setSelectedOption(null);
     setIsCorrect(null);
-    voiceService.stop();
     setImageError(false);
     setImageLoading(true);
     setImageRetry(0);
@@ -165,7 +153,6 @@ export default function ExamArena() {
     const activeSubject = subjectOverride || subject;
     
     if (!isFreshBatch && currentIndex < questionQueue.length - 1 && !subjectOverride) {
-      // Just move to next in queue
       const nextIdx = currentIndex + 1;
       setCurrentIndex(nextIdx);
       setCurrentQuestion(questionQueue[nextIdx]);
@@ -174,9 +161,7 @@ export default function ExamArena() {
     }
 
     try {
-      // Use Smart Router for fetching
       const question = await questionRouter.getSmartQuestion(activeSubject, examType, year);
-      
       if (question) {
         if (subjectOverride) setSubject(subjectOverride);
         setQuestionQueue([question]);
@@ -194,15 +179,23 @@ export default function ExamArena() {
   };
 
   const handleOptionSelect = (option: string) => {
-    if (selectedOption || !currentQuestion) return;
+    if (!currentQuestion) return;
+    
+    // In Exam Mode, we allow changing answers, but we don't reveal correctness
+    if (examMode) {
+      setUserAnswers(prev => ({ ...prev, [currentQuestion.id]: option }));
+      setSelectedOption(option);
+      return;
+    }
+    
+    if (selectedOption) return; // For non-exam mode, lock once selected
     
     setSelectedOption(option);
+    
     const correct = option.toLowerCase() === currentQuestion.answer.toLowerCase();
     setIsCorrect(correct);
-
     if (!correct) {
-      // Automatically run neural analysis if wrong
-      runNeuralAnalysis(`I picked option ${option.toUpperCase()}, but it's wrong. Oya, enlighten me!`);
+      runNeuralAnalysis(`I picked option ${option.toUpperCase()}, but it's wrong.`);
     }
   };
 
@@ -211,7 +204,7 @@ export default function ExamArena() {
     setIsAiProcessing(true);
     setShowAiPanel(true);
     try {
-      const res = await aiTutor.askTutorChuksLive(customQuery || "Explain this question and why the answer is correct.", currentQuestion);
+      const res = await aiTutor.askTutorChuksLive(customQuery || "Explain...", currentQuestion);
       setAiResponse(res);
     } catch (err) {
       console.error(err);
@@ -223,6 +216,20 @@ export default function ExamArena() {
   return (
     <div className="min-h-screen bg-[#050505] text-white p-4 md:p-8 font-sans selection:bg-emerald-500/30 overflow-x-hidden w-full">
       <div className="max-w-5xl mx-auto space-y-6">
+        {/* --- EXAM CONTROLS --- */}
+        <div className="flex gap-4 mb-4">
+            <button 
+                onClick={() => setExamMode(!examMode)}
+                className={`px-4 py-2 rounded-full text-xs font-bold ${examMode ? 'bg-rose-500 text-white' : 'bg-zinc-800 text-zinc-400'}`}
+            >
+                {examMode ? 'EXAM MODE: ACTIVE' : 'EXAM MODE: OFF'}
+            </button>
+            {examMode && (
+                <div className="px-4 py-2 bg-zinc-900 text-cyan-400 font-mono rounded-full text-xs">
+                    {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+                </div>
+            )}
+        </div>
         
         {/* Navigation Escape */}
         <div className="flex items-center justify-between">
@@ -397,6 +404,22 @@ export default function ExamArena() {
                     <div className="flex-1 flex items-center justify-center">
                       <RefreshCw className="w-12 h-12 text-zinc-700 animate-spin" />
                     </div>
+                  ) : (examMode && isSubmitted) ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
+                        <h2 className="text-3xl font-black text-emerald-400">EXAM SUBMITTED</h2>
+                        <div className="text-6xl font-black">
+                            {questionQueue.reduce((score, q) => (
+                                userAnswers[q.id] && userAnswers[q.id].toLowerCase() === q.answer.toLowerCase() ? score + 1 : score
+                            ), 0)} <span className="text-zinc-600 text-3xl">/ {questionQueue.length}</span>
+                        </div>
+                        <p className="text-zinc-400 uppercase tracking-widest text-xs font-bold">Total Score</p>
+                        <button 
+                           onClick={() => { setIsSubmitted(false); setExamMode(false); setTimeLeft(1800); }}
+                           className="bg-white text-black px-8 py-4 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 mt-8"
+                        >
+                           Return to Arena
+                        </button>
+                    </div>
                   ) : currentQuestion ? (
                     <motion.div 
                       key={currentQuestion.id}
@@ -519,25 +542,36 @@ export default function ExamArena() {
                   )}
 
                   <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 md:mt-12 pt-8 border-t border-white/5">
-                    <button 
-                      onClick={() => fetchNewQuestion(false)}
-                      disabled={loading}
-                      className="w-full sm:w-auto flex items-center justify-center gap-3 bg-white text-black px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 transition-colors disabled:opacity-50"
-                    >
-                      <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                      <span className="text-xs md:text-sm">
-                        {currentIndex < questionQueue.length - 1 ? `Next (${currentIndex + 2}/${questionQueue.length})` : 'Shuffle Node'}
-                      </span>
-                    </button>
+                    {examMode && !isSubmitted ? (
+                        <button 
+                            onClick={() => setIsSubmitted(true)}
+                            className="w-full bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black uppercase tracking-tighter hover:bg-emerald-500"
+                        >
+                            Submit Exam
+                        </button>
+                    ) : (
+                        <>
+                            <button 
+                              onClick={() => fetchNewQuestion(false)}
+                              disabled={loading}
+                              className="w-full sm:w-auto flex items-center justify-center gap-3 bg-white text-black px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                            >
+                              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                              <span className="text-xs md:text-sm">
+                                {currentIndex < questionQueue.length - 1 ? `Next (${currentIndex + 2}/${questionQueue.length})` : 'Shuffle Node'}
+                              </span>
+                            </button>
 
-                    {/* --- STEP 3: THE AI BUTTON --- */}
-                    <button 
-                      onClick={() => runNeuralAnalysis()}
-                      className="w-full sm:w-auto flex items-center justify-center gap-3 bg-emerald-500 text-white px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-emerald-400 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)]"
-                    >
-                      <BrainCircuit className="w-5 h-5" />
-                      <span className="text-xs md:text-sm">Neural Analysis</span>
-                    </button>
+                            {/* --- STEP 3: THE AI BUTTON --- */}
+                            <button 
+                              onClick={() => runNeuralAnalysis()}
+                              className="w-full sm:w-auto flex items-center justify-center gap-3 bg-emerald-500 text-white px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-emerald-400 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)]"
+                            >
+                              <BrainCircuit className="w-5 h-5" />
+                              <span className="text-xs md:text-sm">Neural Analysis</span>
+                            </button>
+                        </>
+                    )}
                   </div>
                </div>
             </div>
