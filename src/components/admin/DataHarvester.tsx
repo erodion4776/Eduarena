@@ -110,13 +110,8 @@ export default function DataHarvester() {
           if (stopRequested.current) break;
 
           try {
-            const url = `https://questions.aloc.com.ng/api/v2/q?subject=${currentSub.toLowerCase()}&type=${exam.toLowerCase()}`;
-            const response = await fetch(url, {
-              headers: { 
-                'Accept': 'application/json', 
-                'AccessToken': token.trim() 
-              }
-            });
+            const url = `/api/external/aloc?subject=${currentSub.toLowerCase()}&type=${exam.toLowerCase()}&count=1`;
+            const response = await fetch(url);
 
             if (!response.ok) {
               if (response.status === 429) {

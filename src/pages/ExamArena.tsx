@@ -389,6 +389,12 @@ export default function ExamArena() {
                     <option value="civiledu">Civic Education</option>
                     <option value="commerce">Commerce</option>
                     <option value="accounting">Accounting</option>
+                    <option value="geography">Geography</option>
+                    <option value="french">French</option>
+                    <option value="fineart">Fine Art</option>
+                    <option value="crk">C.R.S (Religious)</option>
+                    <option value="literature">Literature</option>
+                    <option value="agriculture">Agricultural Science</option>
                     <option value="currentaffairs">Current Affairs</option>
                   </select>
                   <div className="hidden sm:block w-px h-4 bg-zinc-800 self-center" />

@@ -583,6 +583,27 @@ const storeKeepingData: Omit<Topic, 'examType' | 'subject'>[] = [
   { sn: "9", topic: "Entrepreneurship", objectives: ["Meaning/importance.", "Skills (managerial, accounting, marketing, promotion).", "Idea generation.", "Feasibility study/proposal writing."] }
 ];
 
+const physicsData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Interaction of Matter, Space & Time", objectives: ["Matter, Quantities and Units.", "Position, distance, displacement, speed, velocity.", "Newton's laws of motion.", "Fluid at rest (Archimedes'/Flotation)."] },
+  { sn: "2", topic: "Energy: Mechanical and Heat", objectives: ["Work, Energy and Power.", "Heat energy (expansivity, transfer).", "Gas laws.", "Heat capacity/Latent heat."] },
+  { sn: "3", topic: "Waves", objectives: ["Production and propagation.", "Light waves (reflection, refraction, lenses).", "Sound waves (vibrations, resonance)."] },
+  { sn: "4", topic: "Fields", objectives: ["Gravitational Field.", "Electric Field (Coulomb's Law, Circuits).", "Magnetic/Electromagnetic fields (Induction)."] },
+  { sn: "5", topic: "Atomic and Nuclear Physics", objectives: ["Models of the atom.", "Radioactivity (fusion/fission).", "Wave-particle paradox."] }
+];
+
+const visualArtsData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Drawing", objectives: ["Drawing from Objects.", "Drawing from Nature.", "Drawing from Life."] },
+  { sn: "2", topic: "Creative Design (2-Dimensional Art)", objectives: ["Graphic Design.", "Textile Design.", "Photography.", "Mosaic and Collage."] },
+  { sn: "3", topic: "Creative Design (3-Dimensional Art)", objectives: ["Sculpture.", "Product Design/Modelling.", "Ceramics.", "Crafts (Basketry, Jewellery)."] },
+  { sn: "4", topic: "General Art Knowledge", objectives: ["Introduction to Art.", "Art of West Africa.", "History of World Art."] }
+];
+
+const yorubaData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Language", objectives: ["Composition.", "Sound System (phonetics, tones).", "Grammar (word classes, sentences)."] },
+  { sn: "2", topic: "Literature", objectives: ["Oral Literature (Prose, Poetry, Drama).", "Written Literature (Prose, Poetry, Drama)."] },
+  { sn: "3", topic: "Culture", objectives: ["Customs (naming, home training, food).", "Institutions (marriage, politics, beliefs)."] }
+];
+
 const governmentData: Omit<Topic, 'examType' | 'subject'>[] = [
   { sn: "1", topic: "Meaning and Scope of Government", objectives: ["Definition of state.", "Institution vs process vs study."] },
   { sn: "2", topic: "Basic Concepts and Principles of Government", objectives: ["Concepts (state, power, legitimacy, democracy, etc.).", "Principles (rule of law, human rights, separation of powers, etc.)."] },
@@ -615,6 +636,157 @@ const historyData: Omit<Topic, 'examType' | 'subject'>[] = [
   { sn: "7", topic: "Imperialism, Colonialism and Nation-building", objectives: ["Scramble for Africa/Berlin Conference.", "Patterns of colonial rule.", "Decolonization.", "Apartheid in South Africa."] }
 ];
 
+const jambAccountingData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Nature and Significance of Accounting", objectives: ["Development/branches of accounting.", "Objectives of bookkeeping/accounting.", "Users and characteristics of accounting info.", "Principles, concepts, and conventions.", "Role of records in decision making."] },
+  { sn: "2", topic: "Principles of Double Entry", objectives: ["Source documents functions.", "Books of original entry.", "Accounting equation.", "Ledger classifications.", "Trial balance.", "Errors and suspense account."] },
+  { sn: "3", topic: "Ethics in Accounting", objectives: ["Objectives of ethics.", "Qualities (honesty, integrity, transparency, accountability, fairness)."] },
+  { sn: "4", topic: "Cashbook", objectives: ["Columnar cashbooks.", "Discounts (trade/cash).", "Petty cashbook and imprest system."] },
+  { sn: "5", topic: "Bank Transactions and Reconciliation", objectives: ["Instruments (cheques, cards).", "e-banking system.", "Discrepancies causes.", "Bank reconciliation statement."] },
+  { sn: "6", topic: "The Final Accounts of a Sole Trader", objectives: ["Income statement (Trading/Profit & Loss).", "Statement of financial position (Balance sheet).", "Adjustments (bad debts, depreciation, accruals, prepayments)."] },
+  { sn: "7", topic: "Stock Valuation", objectives: ["FIFO, LIFO, and simple average methods.", "Advantages/disadvantages.", "Importance of valuation."] },
+  { sn: "8", topic: "Control Accounts and Self Balancing Ledgers", objectives: ["Importance of control accounts.", "Purchases ledger control.", "Sales ledger control."] },
+  { sn: "9", topic: "Incomplete Records and Single Entry", objectives: ["Conversion to double entry.", "Missing figures determination.", "Final accounts preparation."] },
+  { sn: "10", topic: "Manufacturing Accounts", objectives: ["Cost classification/apportionment.", "Preparation of manufacturing account."] },
+  { sn: "11", topic: "Accounts for Not-for-Profit Organizations", objectives: ["Objectives.", "Receipts and payments account.", "Income and expenditure account.", "Statement of financial position."] },
+  { sn: "12", topic: "Departmental Accounts", objectives: ["Objectives.", "Apportionment of expenses.", "Departmental trading/profit and loss."] },
+  { sn: "13", topic: "Branch Accounts", objectives: ["Objectives.", "Branch accounts in head office books.", "Reconciliation of books."] },
+  { sn: "14", topic: "Joint Venture Accounts", objectives: ["Objectives.", "Personal accounts of venturers.", "Memorandum Joint venture accounts."] },
+  { sn: "15", topic: "Partnership Accounts", objectives: ["Formation, Profit & Loss, Appropriation.", "Admission/retirement/dissolution.", "Goodwill treatment.", "Conversion to company."] },
+  { sn: "16", topic: "Introduction to Company Accounts", objectives: ["Formation/classification.", "Issue of shares/debentures.", "Final accounts and ratio interpretation."] },
+  { sn: "17", topic: "Public Sector Accounting", objectives: ["Cash vs accrual basis.", "Revenue/expenditure sources.", "CRF, assets/liabilities statement.", "Authorities (Accountant General, Auditor General, etc.)."] },
+  { sn: "18", topic: "Information Technology in Accounting", objectives: ["Manual vs computerized systems.", "Data processing stages.", "Hardware and software components."] }
+];
+
+const jambAgriculturalScienceData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "General Agriculture", objectives: ["Definition/branches of agriculture.", "Agro-allied industries importance.", "Ecological zones in West Africa.", "Agricultural genetics (Mendel's laws, cell division).", "Agricultural inputs (land, labor, capital).", "Problems of agricultural development.", "Agricultural technology and extension."] },
+  { sn: "2", topic: "Crop Production", objectives: ["Rocks and soil formation.", "Soil water and conservation.", "Soil fertility and nutrient cycles.", "Land preparation and tillage.", "Plant propagation (sexual/asexual).", "Cropping systems and patterns.", "Common crops husbandry.", "Pasture and forage crops.", "Plant diseases and pests."] },
+  { sn: "3", topic: "Animal Production", objectives: ["Classification of farm animals.", "Animal husbandry terminology.", "Anatomy and physiology.", "Reproduction and hormones.", "Feeds and feeding formulation.", "Animal management systems.", "Animal diseases and parasites.", "Fisheries and wildlife.", "Bee-keeping (Apiculture)."] },
+  { sn: "4", topic: "Agricultural Technology", objectives: ["Farm surveying and planning.", "Simple farm tools maintenance.", "Farm machinery and implements.", "Farm power and energy sources.", "Processing and storage methods.", "Introduction to biotechnology.", "Application of ICT in agriculture.", "Agricultural research and statistics."] }
+];
+
+const jambArabicData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Comprehension", objectives: ["Passage comprehension (70 words).", "Multiple-choice questions (5).", "Understanding themes (politics, economy, health, etc.)."] },
+  { sn: "2", topic: "Translation", objectives: ["English to Arabic translation.", "Arabic to English translation.", "Idiomatic expressions interpretation."] },
+  { sn: "3", topic: "Grammar", objectives: ["Pronouns (demonstrative, relative, separable).", "Gender (Masculine/Feminine).", "Plurals (sound masculine/feminine, broken).", "Verbs (perfect, imperfect, imperative).", "Modifiers (Kana, Inna, Zanna associates).", "Active and passive voice.", "Numbers (1-3000).", "Accusative nouns (object, adverb, circumstance)."] },
+  { sn: "4", topic: "Composition", objectives: ["Written composition on social themes.", "Effective communication in Arabic.", "Usage of idioms and proverbs."] },
+  { sn: "5", topic: "Arabic Literature", objectives: ["Pre-Islamic Period (500-610 C.E.).", "Islamic Period (610-1798 C.E.).", "Modern Period (1798 to date).", "Arabic Literature in West Africa."] }
+];
+
+const jambBiologyData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Variety of Organisms", objectives: ["Characteristics of living things.", "Cell structure and functions.", "Levels of organization (Cell, Tissue, Organ, System, Organism).", "Evolution/classification of Monera, Protista, Fungi, Plantae, Animalia.", "Invertebrates vs Vertebrates.", "Structural and behavioral adaptations.", "Adaptation for obtaining food, defense, securing mates, and regulation."] },
+  { sn: "2", topic: "Form and Functions", objectives: ["Internal structure of flowering plants (Root, Stem, Leaf).", "Mammalian internal organs.", "Nutrition (Autotrophic/Photosynthesis and Heterotrophic).", "Animal nutrition (Classes of food, tests, dental formula, digestion).", "Transport systems in plants and mammals (circulatory/vascular).", "Respiration (organ surfaces, mechanism, aerobic/anaerobic).", "Excretion (mechanisms/structures).", "Support and movement (Skeleton, joint types, plant tropism).", "Reproduction (Asexual/Sexual in plants and mammals).", "Growth meaning and conditions.", "Coordination and control (Nervous system, sense organs, hormonal control).", "Homeostasis (temperature, salt/water regulation)."] },
+  { sn: "3", topic: "Ecology", objectives: ["Factors affecting distribution (Abiotic/Biotic).", "Symbiotic interactions (Energy flow, food chains/webs).", "Nutrient cycling (Carbon, Water, Nitrogen).", "Natural Habitats (Aquatic/Terrestrial).", "Local (Nigerian) Biomes.", "Ecology of Populations (Density, overcrowding, competition, succession).", "Soil characteristics and fertility.", "Humans and environment (Diseases, pollution, conservation)."] },
+  { sn: "4", topic: "Heredity and Variation", objectives: ["Variation in population (Morphological/Physiological).", "Application of variation in crime detection/medicine.", "Heredity (Chromosomes, DNA structure, transmission of characters).", "Probability in genetics and sex determination.", "Application of heredity in agriculture and medicine.", "Sex-linked characters."] },
+  { sn: "5", topic: "Evolution", objectives: ["Theories of evolution (Lamarck, Darwin, Organic theory).", "Evidence of evolution (Fossil records, comparative anatomy).", "Modern evolutionary theories (Mutation)."] }
+];
+
+const jambChemistryData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Separation of mixtures and purification", objectives: ["Pure and impure substances.", "Boiling and melting points as purity criteria.", "Elements, compounds and mixtures.", "Chemical and physical changes.", "Separation processes (distillation, sublimation, chromatography, etc.)."] },
+  { sn: "2", topic: "Chemical Combination", objectives: ["Stoichiometry, laws of definite and multiple proportions.", "Chemical symbols, formulae, and equations.", "Mole concept and Avogadro's number."] },
+  { sn: "3", topic: "Kinetic Theory of Matter and Gas Laws", objectives: ["States of matter and kinetic theory.", "Gas laws (Boyle, Charles, Graham, Dalton, Ideal gas equation).", "Relative molecular mass and vapour density."] },
+  { sn: "4", topic: "Atomic structure and Bonding", objectives: ["Atoms, molecules and ions.", "Atomic structure (protons, neutrons, electrons).", "Electron configuration and orbitals.", "Periodic table and periodicity.", "Chemical bonding (electrovalency, covalency, coordinate, hydrogen bond, metallic bond).", "Shapes of simple molecules.", "Nuclear Chemistry (radioactivity, half-life)."] },
+  { sn: "5", topic: "Air", objectives: ["Natural gaseous constituents.", "Air as a mixture.", "Uses of noble gases."] },
+  { sn: "6", topic: "Water", objectives: ["Composition and solvent properties.", "Hard and soft water (Temporary and permanent hardness).", "Treatment of water for town supply.", "Water of crystallization, efflorescence, deliquescence, hygroscopy."] },
+  { sn: "7", topic: "Solubility", objectives: ["Unsaturated, saturated and supersaturated solutions.", "Solubility curves and calculations.", "Suspensions and colloids."] },
+  { sn: "8", topic: "Environmental Pollution", objectives: ["Air, Water and Soil pollution sources and effects.", "Biodegradable and non-biodegradable pollutants.", "Control measures."] },
+  { sn: "9", topic: "Acids, Bases and Salts", objectives: ["General characteristics and properties of acids, bases and salts.", "Basicity of acids.", "Types of salts and preparation methods.", "pH and pOH scale.", "Acid/base titrations.", "Hydrolysis of salts."] },
+  { sn: "10", topic: "Oxidation and Reduction", objectives: ["Oxidation and reduction in terms of electron transfer and oxidation numbers.", "IUPAC nomenclature using oxidation numbers.", "Tests for oxidizing and reducing agents."] },
+  { sn: "11", topic: "Electrolysis", objectives: ["Faraday's laws of electrolysis.", "Factors affecting discharge of ions.", "Uses (purification, electrochemical cells).", "Corrosion and prevention."] },
+  { sn: "12", topic: "Energy Changes", objectives: ["Enthalpy changes (endothermic/exothermic).", "Entropy and spontaneity of reactions."] },
+  { sn: "13", topic: "Rates Of Chemical Reaction", objectives: ["Factors affecting reaction rate (Temperature, concentration, surface area, catalyst).", "Activation energy and collision theory."] },
+  { sn: "14", topic: "Chemical Equilibrium", objectives: ["Reversible reactions and Le Chatelier's principle.", "Equilibrium constant."] },
+  { sn: "15", topic: "Non-metals and Their Compounds", objectives: ["Hydrogen, Halogens, Oxygen, Sulphur, Nitrogen and Carbon compounds.", "Laboratory and industrial preparations.", "Properties and uses.", "Nitrogen cycle."] },
+  { sn: "16", topic: "Metals And Their Compounds", objectives: ["General properties and extraction methods.", "Alkali and Alkaline-earth metals.", "Aluminium, Tin and Transition metals (Iron, Copper).", "Alloys (Steel, Brass, Bronze, etc.)."] },
+  { sn: "17", topic: "Organic Compounds", objectives: ["IUPAC nomenclature.", "Alkanes, Alkenes, Alkynes.", "Aromatic hydrocarbons (Benzene).", "Alkanols, Alkanals, Alkanones, Alkanoic acids, Alkanoates.", "Amines.", "Carbohydrates, Proteins, Enzymes.", "Polymers (Natural and synthetic)."] },
+  { sn: "18", topic: "Chemistry and Industry", objectives: ["Chemical industries types and raw materials.", "Heavy and fine chemicals.", "Biotechnology."] }
+];
+
+const jambCommerceData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Commerce", objectives: ["Meaning and scope.", "Characteristics and functions.", "Comparison with related subjects."] },
+  { sn: "2", topic: "Occupation", objectives: ["Meaning and importance.", "Types (industrial, commercial, and services).", "Factors determining choice of occupation."] },
+  { sn: "3", topic: "Production", objectives: ["Factors, characteristics, and rewards (land, labour, capital, entrepreneur).", "Division of Labour and specialization.", "Types (primary, secondary, tertiary)."] },
+  { sn: "4", topic: "Trade", objectives: ["Home Trade (Retail/Wholesale types, functions, trends).", "Foreign Trade (Procedures, documents, barriers).", "Role of government agencies (Customs, Ports Authority)."] },
+  { sn: "5", topic: "Purchase and Sale of Goods", objectives: ["Procedure and documentation (Invoices, statements, etc.).", "Terms of trade (discounts, warranties, C.O.D, C.I.F, etc.).", "Terms of payments (Cash, Credit)."] },
+  { sn: "6", topic: "Aids-to-Trade", objectives: ["Advertising (Types, media, pros/cons).", "Banking (Types, services, challenges).", "Communication (Types, trends, barriers).", "Insurance (Principles, terms, importance).", "Tourism (Importance, agencies, challenges).", "Transportation (Modes, importance, pros/cons).", "Warehousing (Types, functions, siting factors)."] },
+  { sn: "7", topic: "Business Units", objectives: ["Forms and features (Sole Proprietorship, Partnership, Companies, etc.).", "Business Mergers and registration.", "Dissolution and liquidation."] },
+  { sn: "8", topic: "Financing Business", objectives: ["Sources of finance (personal savings, shares, loans, etc.).", "Types of capital (Share, authorized, working, etc.).", "Calculation of capital, profits, and turnover.", "Role of Bureau de change."] },
+  { sn: "9", topic: "Trade Associations", objectives: ["Objectives and functions of trade and manufacturer’s associations.", "Chambers of Commerce functions."] },
+  { sn: "10", topic: "Money", objectives: ["Evolution and functions.", "Forms and qualities."] },
+  { sn: "11", topic: "Elements of Business Management", objectives: ["Functions (planning, organizing, leading, etc.).", "Principles (span of control, unity of command, etc.).", "Organizational structures and functional areas."] },
+  { sn: "12", topic: "Stock Exchange", objectives: ["Importance and functions.", "Types of securities (stocks, shares, bonds).", "Operating regulations and speculation."] },
+  { sn: "13", topic: "Elements of Marketing", objectives: ["The marketing concept.", "Marketing mix (4Ps).", "Market Segmentation.", "Public relations and Customer Service."] },
+  { sn: "14", topic: "Legal Aspect of Business", objectives: ["Meaning and validity of a simple contract.", "Agency, Sale of Goods Act, and Hire Purchase Act.", "Government regulations and consumer protection (NAFDAC, etc.)."] },
+  { sn: "15", topic: "Information and Communication Technology (ICT)", objectives: ["Computer types, functions, and challenges.", "Terms (Internet, Browsing, etc.).", "Activities (e-commerce, e-banking, e-business)."] },
+  { sn: "16", topic: "Business Environment and Social Responsibility", objectives: ["Types of environments (Legal, political, etc.).", "Social responsibility and societal consideration.", "Pollution types and implications on business."] }
+];
+
+const jambCRSData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Themes from Creation to the Division of the Kingdom", objectives: ["The Sovereignty of God (Creation and Control).", "The Covenant (Noah, Abraham, Israel, New Covenant).", "The Call of Abraham (Purpose and significance)."] },
+  { sn: "2", topic: "Themes from the Division of the Kingdom to the Return from Exile", objectives: ["The Reign of King David (Anointing, victory over Goliath, Davidic covenant).", "The Prophets and Their Messages (Amos, Isaiah, Jeremiah, Ezekiel)."] },
+  { sn: "3", topic: "Themes from the Four Gospels and Acts of the Apostles", objectives: ["The Birth and Early Life of Jesus (Annunciation, childhood).", "The Ministry of Jesus (Baptism, Temptation, Sermon on the Mount, Miracles and Parables).", "The Passion, Death and Resurrection of Jesus (Last Supper, Crucifixion, Resurrection, Ascension)."] },
+  { sn: "4", topic: "Themes from Selected Epistles", objectives: ["Paul's Epistles (Romans, Ephesians, Philippians, 1 John).", "The Teaching on Christian Living (Love, Fruits/Gifts of the Spirit, Marriage and family life)."] }
+];
+
+const jambEconomicsData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Economics as a Science", objectives: ["Basic Concepts: Wants, Scarcity, Choice, Opportunity cost.", "Economic problems: What, how, and for whom to produce.", "Utility of Production Possibility Frontier (PPF)."] },
+  { sn: "2", topic: "Economic Systems", objectives: ["Free enterprise, centrally planned, and mixed economies.", "Economic reforms (deregulation, banking sector consolidation).", "Solutions to economic problems under different systems."] },
+  { sn: "3", topic: "Methods and Tools of Economic Analysis", objectives: ["Scientific Approach: Inductive/Deductive, Positive/Normative.", "Basic Tools: Tables, charts, graphs.", "Measures of Central Tendency and Dispersion."] },
+  { sn: "4", topic: "Theory of Demand", objectives: ["Determinants of demand and demand schedules.", "Change in quantity demanded vs change in demand.", "Elasticity of demand: Types, measurement, and importance."] },
+  { sn: "5", topic: "Theory of Consumer Behavior", objectives: ["Utility concepts (Cardinal, Ordinal, Marginal).", "Indifference curve and budget line.", "Consumer equilibrium and surplus."] },
+  { sn: "6", topic: "Theory of Supply", objectives: ["Determinants of supply and supply curves.", "Change in quantity supplied vs change in supply.", "Elasticity of supply: Determinants and measurement."] },
+  { sn: "7", topic: "Theory of Price Determination", objectives: ["Market and price concepts.", "Equilibrium price and quantity.", "Price legislation (Minimum/Maximum) and effects."] },
+  { sn: "8", topic: "Theory of Production", objectives: ["Production concepts and interrelationships (TP, AP, MP).", "Division of labour and economies of scale.", "Returns to scale and factors affecting productivity."] },
+  { sn: "9", topic: "Theory of Costs and Revenue", objectives: ["Cost concepts (Fixed, Variable, Total, Marginal).", "Revenue concepts (Total, Average, Marginal).", "Short-run and long-run costs curves."] },
+  { sn: "10", topic: "Market Structures", objectives: ["Perfectly competitive market assumptions and equilibrium.", "Imperfect Markets: Monopolies and monopolistic competition.", "Break-even and shut-down analysis."] },
+  { sn: "11", topic: "National Income", objectives: ["Concepts: GNP, GDP, NI, NNP.", "Measurement methods and Circular flow of income.", "Consumption, investment, and savings concepts.", "The multiplier and income determination."] },
+  { sn: "12", topic: "Money and Inflation", objectives: ["Functions and characteristics of money.", "Demand and Supply of money.", "Quantity Theory of money.", "Inflation and Deflation: Types, causes, and control."] },
+  { sn: "13", topic: "Financial Institutions", objectives: ["Financial institutions role in economic development.", "Money and capital markets.", "Monetary policy instruments and banking money creation."] },
+  { sn: "14", topic: "Public Finance", objectives: ["Objectives of public finance.", "Fiscal policy instruments.", "Source of government revenue and principles of taxation.", "Budget and public debts."] },
+  { sn: "15", topic: "Economic Growth and Development", objectives: ["Indicators of growth and development.", "Factors affecting growth and development.", "Problems of development and planning in Nigeria."] },
+  { sn: "16", topic: "Agriculture in Nigeria", objectives: ["Features and role of agriculture in economic development.", "Problems and agricultural policies.", "Instability in agricultural incomes."] },
+  { sn: "17", topic: "Industry and Industrialization", objectives: ["Location and localization of industry.", "Industrialization strategies and economic development.", "Factors determining the size of firms."] },
+  { sn: "18", topic: "Natural Resources and the Nigerian Economy", objectives: ["Oil and non-oil sectors contribution.", "Linkage effects and role of NNPC/OPEC.", "Challenges of natural resources exploitation."] },
+  { sn: "19", topic: "Business Organizations", objectives: ["Private vs Public enterprises.", "Funding and management problems.", "Privatization and Commercialization."] },
+  { sn: "20", topic: "Population", objectives: ["Population theories and census importance.", "Over-population, under-population, and optimum population.", "Population policy and economic development."] },
+  { sn: "21", topic: "International Trade", objectives: ["Basis for trade (Absolute/Comparative advantage).", "Balance of trade and balance of payments.", "Exchange rate determination."] },
+  { sn: "22", topic: "International Economic Organizations", objectives: ["Roles of bodies like ECOWAS, AU, IMF, World Bank.", "Relevance to the Nigerian economy."] },
+  { sn: "23", topic: "Factors of Production and Their Theories", objectives: ["Types, features, and rewards of factors.", "Determination of wages, interest, and profits.", "Unemployment types and solutions."] }
+];
+
+const jambUseOfEnglishData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Comprehension/Summary", objectives: ["Description, Narration, Exposition, Argumentation/persuasion.", "Cloze test (gap filling).", "Logical reasoning (deductions, inferences).", "Approved text: 'The Life Changer' by Khadija Abubakar Jalli."] },
+  { sn: "2", topic: "Lexis and Structure", objectives: ["Synonyms, Antonyms, Homonyms.", "Clause and sentence patterns.", "Word classes (Nouns, Verbs, etc.).", "Mood, tense, aspect, agreement/concord.", "Punctuation and spelling.", "Figurative and idiomatic usage."] },
+  { sn: "3", topic: "Oral Forms", objectives: ["Vowels (monophthongs and diphthongs).", "Consonants (including clusters).", "Rhymes and homophones.", "Word stress (monosyllabic and polysyllabic).", "Intonation and emphatic stress."] }
+];
+
+const jambFineArtData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Section A: Theory of Art", objectives: ["Classification of Art (Visual, Performing, Literary).", "Elements and Principles of Design.", "Art Terms (Pigments, motif, Greenware, Chiaroscuro, etc.)."] },
+  { sn: "2", topic: "Section B: Historical Dimensions of Art", objectives: ["History of Art (Prehistoric, Greek, Roman, Medieval, Renaissance).", "19th and 20th Century art movements.", "Traditional African Art (Dogon, Ashanti, etc.).", "Traditional Nigerian Art (Nok, Ife, Benin, etc.).", "Contemporary Nigerian Arts and Artists."] },
+  { sn: "3", topic: "Section C: Artistic Skills, Techniques and Processes", objectives: ["Two-Dimensional Art (Drawing, Painting, Graphics, Textile).", "Perspective rules and terms.", "Three-Dimensional Art (Sculpture, Ceramics, Crafts).", "Tools, Materials and Equipment."] },
+  { sn: "4", topic: "Section D: Art Appreciation and Society", objectives: ["Art Appreciation (Aesthetics of natural/man-made objects).", "Meaning and Functions of Art in Society.", "Art Entrepreneurship and job prospects."] }
+];
+
+const jambGeographyData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Practical Geography", objectives: ["Map scales and measurements (distances, areas, gradients).", "Map reading and interpretation (relief, physical and human features).", "Interpretation of statistical data (Maps and diagrams).", "Elementary Surveying (Chain and prismatic).", "Geographic Information System (GIS) components and applications."] },
+  { sn: "2", topic: "Physical Geography", objectives: ["The earth as a planet (rotation, revolution, shape, size).", "The Earth Crust: Rocks (types/characteristics), landforms (mountains, plateaux, plains).", "Volcanism and Earthquakes.", "Denudation processes (weathering, erosion, deposition).", "Water Bodies: Oceans, seas, ocean currents, lakes, and rivers.", "Weather and Climate (elements, classification, measurement, climate change).", "Vegetation: Major types and distribution.", "Soils: Properties, formation, and tropical types.", "Environmental Resources and interactions (Ecosystem).", "Environmental hazards and conservation."] },
+  { sn: "3", topic: "Human Geography", objectives: ["Population: Characteristics, factors of distribution and growth.", "Settlement: Rural and urban patterns and functions.", "Economic activities: Agriculture, manufacturing, transport, communication, world trade, and tourism."] },
+  { sn: "4", topic: "Regional Geography", objectives: ["Broad outline of Nigeria (Location, size, natural resources, agriculture, industry).", "Economic and Human Geography of Nigeria.", "ECOWAS: Objectives, member states, and prospects."] }
+];
+
+const jambGovernmentData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Elements of Government", objectives: ["Basic Concepts: Power, Authority, Legitimacy, Sovereignty, State, Nation.", "Forms of Government: Monarchy, Aristocracy, Oligarchy, Democracy, etc.", "Arms of Government: Legislature, Executive, Judiciary.", "Structures of Governance: Unitary, Federal, Confederal.", "Systems of Governance: Presidential, Parliamentary.", "Political Ideologies: Capitalism, Socialism, Communism, etc.", "Constitution: Meaning, sources, and types.", "Principles of Democratic Government: Rule of Law, Separation of Powers, etc.", "Processes of Legislation and Citizenship.", "Electoral Process and Political Parties.", "Pressure Groups and Public Opinion.", "Civil Service characteristics and functions."] },
+  { sn: "2", topic: "Political Development in Nigeria", objectives: ["Pre-colonial Polities: Hausa, Emirate, Igbo, Yoruba.", "Imperialist Penetration: British and French colonial policies.", "Process of Decolonization and Nationalism.", "Constitutional Development (Clifford, Richards, Macpherson, Lyttleton).", "Post-Independence Constitutions (1963, 1979, 1989, 1999).", "Institutions of Government and Public Commissions.", "Political Parties and Party Politics in Post-Independence Nigeria.", "Structure of Nigerian Federalism and creation of states.", "Public Corporations, Parastatals, and Local Government.", "The Military in Nigerian Politics."] },
+  { sn: "3", topic: "Foreign Policy and Nigeria's International Relations", objectives: ["Foreign Policy definition and determinants.", "Nigeria's Foreign Policy goals and Non-Alignment.", "Relations with African Countries and major powers.", "Nigeria in International Organizations (UN, Commonwealth, AU, ECOWAS, OPEC)."] },
+  { sn: "4", topic: "International Organizations", objectives: ["ECOWAS, AU, Commonwealth, OPEC, UNO.", "Origin, objectives, structure, achievements, and problems."] }
+];
+
+const jambFrenchData: Omit<Topic, 'examType' | 'subject'>[] = [
+  { sn: "1", topic: "Written Comprehension in French", objectives: ["Deduce answers on content, intent, and style of texts.", "Topics: Love, politics, marriage, communication, travel, etc.", "Apply reasoning skills."] },
+  { sn: "2", topic: "Structure and Use of Written French", objectives: ["Identification of basic form classes (Nouns, Pronouns, Verbs, Adjectives, Adverbs, Prepositions, Conjunctions, Articles).", "Vocabulary span assessment (meaning, opposites, synonyms).", "Importance of word order (Affirmative, Interrogative, Imperative, Passive voice).", "Language structure processes (Conjugation, Negation, Agreement, Pluralization, Derivation).", "French in set expressions (Proverbs, Idioms, Speech acts)."] },
+  { sn: "3", topic: "Workings of French Sounds", objectives: ["Sound discrimination and similarity.", "Letter-sound correspondence.", "Syllabification and Liaison.", "Sense groups in reading and Faux amis."] },
+  { sn: "4", topic: "Culture and Civilization", objectives: ["Educational system, socio-economic life, political/cultural life of Francophone Africa and France.", "Comparison with home country features."] }
+];
+
 export const syllabusData: Record<string, Topic[]> = {
   "Financial Accounting": financialAccountingData.map(t => ({ ...t, examType: 'WAEC', subject: 'Financial Accounting' })),
   "Mathematics": mathematicsData.map(t => ({ ...t, examType: 'WAEC', subject: 'Mathematics' })),
@@ -639,7 +811,23 @@ export const syllabusData: Record<string, Topic[]> = {
   "Literature in English": literatureInEnglishData.map(t => ({ ...t, examType: 'WAEC', subject: 'Literature in English' })),
   "Marketing": marketingData.map(t => ({ ...t, examType: 'WAEC', subject: 'Marketing' })),
   "Music": musicData.map(t => ({ ...t, examType: 'WAEC', subject: 'Music' })),
-  "Store-Keeping": storeKeepingData.map(t => ({ ...t, examType: 'WAEC', subject: 'Store-Keeping' }))
+  "Store-Keeping": storeKeepingData.map(t => ({ ...t, examType: 'WAEC', subject: 'Store-Keeping' })),
+  "Physics": physicsData.map(t => ({ ...t, examType: 'WAEC', subject: 'Physics' })),
+  "Visual Arts": visualArtsData.map(t => ({ ...t, examType: 'WAEC', subject: 'Visual Arts' })),
+  "Yoruba": yorubaData.map(t => ({ ...t, examType: 'WAEC', subject: 'Yoruba' })),
+  "JAMB Accounting": jambAccountingData.map(t => ({ ...t, examType: 'JAMB', subject: 'Accounting' })),
+  "JAMB Agricultural Science": jambAgriculturalScienceData.map(t => ({ ...t, examType: 'JAMB', subject: 'Agricultural Science' })),
+  "JAMB Arabic": jambArabicData.map(t => ({ ...t, examType: 'JAMB', subject: 'Arabic' })),
+  "JAMB Biology": jambBiologyData.map(t => ({ ...t, examType: 'JAMB', subject: 'Biology' })),
+  "JAMB Chemistry": jambChemistryData.map(t => ({ ...t, examType: 'JAMB', subject: 'Chemistry' })),
+  "JAMB Commerce": jambCommerceData.map(t => ({ ...t, examType: 'JAMB', subject: 'Commerce' })),
+  "JAMB CRS": jambCRSData.map(t => ({ ...t, examType: 'JAMB', subject: 'CRS' })),
+  "JAMB Economics": jambEconomicsData.map(t => ({ ...t, examType: 'JAMB', subject: 'Economics' })),
+  "JAMB Use of English": jambUseOfEnglishData.map(t => ({ ...t, examType: 'JAMB', subject: 'Use of English' })),
+  "JAMB Fine Art": jambFineArtData.map(t => ({ ...t, examType: 'JAMB', subject: 'Fine Art' })),
+  "JAMB French": jambFrenchData.map(t => ({ ...t, examType: 'JAMB', subject: 'French' })),
+  "JAMB Geography": jambGeographyData.map(t => ({ ...t, examType: 'JAMB', subject: 'Geography' })),
+  "JAMB Government": jambGovernmentData.map(t => ({ ...t, examType: 'JAMB', subject: 'Government' }))
 };
 
 

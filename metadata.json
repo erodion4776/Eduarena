@@ -1,5 +1,6 @@
 {
   "name": "Edu Arena",
   "description": "The most advanced AI-powered learning platform for JAMB, WAEC, and NECO students. Study with Tutor Chuks and master your exams.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

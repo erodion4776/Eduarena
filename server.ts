@@ -355,6 +355,37 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // --- ALOC API Proxy ---
+  app.get("/api/external/aloc", async (req, res) => {
+    const { subject, type, year, count } = req.query;
+    const ACCESS_TOKEN = 'ALOC-84eb83db941bfc4c524c';
+    
+    let url = `https://questions.aloc.com.ng/api/v2/q/${count || 1}?subject=${subject}&type=${type}`;
+    if (year && year !== 'all' && year !== '') {
+      url += `&year=${year}`;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'AccessToken': ACCESS_TOKEN,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: `ALOC_API_REJECT: ${response.status}` });
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      console.error("ALOC Proxy Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // --- AI Context Search ---
   app.get("/api/ai/query", (req, res) => {
     const { q } = req.query;
@@ -929,6 +960,71 @@ async function startServer() {
     const years = [];
     for (let i = 2025; i >= 1983; i--) years.push(i);
     res.json(years);
+  });
+
+  // --- AI Tutor Endpoint ---
+  app.post("/api/ai/tutor", async (req, res) => {
+    const { userQuery, question, stats } = req.body;
+    const geminiKey = process.env.GEMINI_API_KEY;
+
+    if (!geminiKey) {
+      return res.status(500).json({ 
+        answer: "Ah ah, network is misbehaving (API Key missing)! But look, the answer is clearly " + (question.answer || "").toUpperCase() + ". Don't let gravity weigh you down, study hard!",
+        provider: 'fallback' 
+      });
+    }
+
+    const apiDataContext = `
+[HIDDEN_KNOWLEDGE: ALOC_API_SOURCE]
+DATA_SOURCE: ${question.source === 'vault' ? "GLOBAL_VAULT" : "LIVE_SATELLITE"}
+VAULT_TOTAL: ${stats?.total || 0}
+SECTION/INSTRUCTION: ${question.section || "N/A"}
+PASSAGE: ${question.passage || "N/A"}
+VISUAL_DIAGRAM_PRESENT: ${!!question.image}
+QUESTION: ${question.question}
+OPTIONS: A) ${question.option.a}, B) ${question.option.b}, C) ${question.option.c}, D) ${question.option.d}, E) ${question.option.e || "N/A"}
+CORRECT_ANSWER: ${question.answer?.toUpperCase()}
+EXPLANATION_FROM_SOURCE: ${question.solution || "Not provided by bank"}
+YEAR: ${question.examyear}
+`;
+
+    const systemInstruction = `You are Tutor Chuks, a brilliant and direct Nigerian teacher. 
+Use the following API data to help the student: ${apiDataContext}.
+Mention subtly that the system is getting smarter (we have synced questions to the global vault).
+Explain why the correct answer is ${question.answer?.toUpperCase()} using a relatable Nigerian analogy.
+Be extremely concise (under 80 words). Speak like a mentor.`;
+
+    const fullPrompt = `Student Question: ${userQuery}`;
+
+    try {
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({
+        apiKey: geminiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
+        config: {
+          systemInstruction
+        }
+      });
+
+      const text = response.text || "";
+
+      res.json({ answer: text.trim(), provider: 'gemini' });
+    } catch (e: any) {
+      console.error("AI Tutor Error:", e);
+      res.json({ 
+        answer: "Ah ah, calculations are complex! But look, the answer is " + (question.answer || "").toUpperCase() + ". Keep focusing!",
+        provider: 'fallback' 
+      });
+    }
   });
 
   app.get("/api/oracle/topics", (req, res) => {
