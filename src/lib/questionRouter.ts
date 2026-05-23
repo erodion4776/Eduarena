@@ -56,7 +56,7 @@ export const questionRouter = {
             .range(randomOffset, randomOffset)
             .single();
 
-          if (!error && data) {
+          if (!error && data && data.question_data) {
             logger.info("Question retrieved from Global Vault");
             const q = data.question_data as ALOCQuestion;
             return {
@@ -71,6 +71,10 @@ export const questionRouter = {
       logger.info("Fetching fresh question from Satellite (ALOC API)");
       const freshBatch = await alocService.fetchLiveQuestions(subject, type, year, 1);
       const freshQuestion = freshBatch[0];
+
+      if (!freshQuestion) {
+        throw new Error("No live question available");
+      }
 
       // 5. Async Sync: Upsert to Global Vault & Local Cache
       this.syncToGlobalVault(freshQuestion).catch(e => logger.error("Async Sync Failed", e));

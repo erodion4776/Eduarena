@@ -166,10 +166,13 @@ export default function ExamArena() {
     
     if (!isFreshBatch && currentIndex < questionQueue.length - 1 && !subjectOverride && !forceLive) {
       const nextIdx = currentIndex + 1;
-      setCurrentIndex(nextIdx);
-      setCurrentQuestion(questionQueue[nextIdx]);
-      setLoading(false);
-      return;
+      const nextQuestion = questionQueue[nextIdx];
+      if (nextQuestion) {
+        setCurrentIndex(nextIdx);
+        setCurrentQuestion(nextQuestion);
+        setLoading(false);
+        return;
+      }
     }
 
     try {
@@ -204,7 +207,7 @@ export default function ExamArena() {
     
     setSelectedOption(option);
     
-    const correct = option.toLowerCase() === currentQuestion.answer.toLowerCase();
+    const correct = option.toLowerCase() === (currentQuestion.answer || '').toLowerCase();
     setIsCorrect(correct);
     if (!correct) {
       runNeuralAnalysis(`I picked option ${option.toUpperCase()}, but it's wrong.`);
@@ -421,7 +424,7 @@ export default function ExamArena() {
                         <h2 className="text-3xl font-black text-emerald-400">EXAM SUBMITTED</h2>
                         <div className="text-6xl font-black">
                             {questionQueue.reduce((score, q) => (
-                                userAnswers[q.id] && userAnswers[q.id].toLowerCase() === q.answer.toLowerCase() ? score + 1 : score
+                                q && q.answer && userAnswers[q.id] && userAnswers[q.id].toLowerCase() === q.answer.toLowerCase() ? score + 1 : score
                             ), 0)} <span className="text-zinc-600 text-3xl">/ {questionQueue.length}</span>
                         </div>
                         <p className="text-zinc-400 uppercase tracking-widest text-xs font-bold">Total Score</p>
@@ -506,11 +509,11 @@ export default function ExamArena() {
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {Object.entries(currentQuestion.option)
+                        {currentQuestion.option && Object.entries(currentQuestion.option)
                           .filter(([_, value]) => value && value.trim() !== "")
                           .map(([key, value]) => {
                           const isThisSelected = selectedOption === key;
-                          const isThisCorrect = currentQuestion.answer.toLowerCase() === key.toLowerCase();
+                          const isThisCorrect = (currentQuestion.answer || '').toLowerCase() === key.toLowerCase();
                           
                           let borderClass = "border-white/10";
                           let bgClass = "bg-white/5";

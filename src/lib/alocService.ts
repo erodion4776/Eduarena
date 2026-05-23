@@ -30,7 +30,12 @@ export const alocService = {
 
       const data = await response.json();
       
+      if (!data || !data.data) {
+        return [];
+      }
+      
       const normalizeQuestion = (q: any): ALOCQuestion => {
+        if (!q) return {} as ALOCQuestion;
         let imgUrl = q.image;
         if (!imgUrl || (typeof imgUrl === 'string' && imgUrl.trim() === '')) {
           imgUrl = undefined;
@@ -45,8 +50,8 @@ export const alocService = {
       };
 
       const normalized = Array.isArray(data.data) 
-        ? data.data.map(normalizeQuestion) 
-        : [normalizeQuestion(data.data)];
+        ? data.data.map(normalizeQuestion).filter((q: any) => q && q.id) 
+        : (data.data ? [normalizeQuestion(data.data)].filter(q => q && q.id) : []);
 
       return normalized;
     } catch (error) {
