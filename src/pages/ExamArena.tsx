@@ -54,8 +54,20 @@ export default function ExamArena() {
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
   const [imageRetry, setImageRetry] = useState(0);
+  const [autoPreview, setAutoPreview] = useState(false);
 
   const IMAGE_BASE_URL = 'https://questions.aloc.com.ng/storage/';
+
+  // Auto Preview Effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (autoPreview && !loading) {
+      interval = setInterval(() => {
+        fetchNewQuestion(true, undefined, true);
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [autoPreview, loading]);
 
   const getImageUrl = () => {
     if (!currentQuestion?.image || currentQuestion.image.trim() === "") return '';
@@ -141,7 +153,7 @@ export default function ExamArena() {
     fetchNewQuestion(true);
   }, [subject, examType, year]);
 
-  const fetchNewQuestion = async (isFreshBatch: boolean = false, subjectOverride?: string) => {
+  const fetchNewQuestion = async (isFreshBatch: boolean = false, subjectOverride?: string, forceLive: boolean = false) => {
     setLoading(true);
     setAiResponse(null);
     setSelectedOption(null);
@@ -152,7 +164,7 @@ export default function ExamArena() {
 
     const activeSubject = subjectOverride || subject;
     
-    if (!isFreshBatch && currentIndex < questionQueue.length - 1 && !subjectOverride) {
+    if (!isFreshBatch && currentIndex < questionQueue.length - 1 && !subjectOverride && !forceLive) {
       const nextIdx = currentIndex + 1;
       setCurrentIndex(nextIdx);
       setCurrentQuestion(questionQueue[nextIdx]);
@@ -161,7 +173,7 @@ export default function ExamArena() {
     }
 
     try {
-      const question = await questionRouter.getSmartQuestion(activeSubject, examType, year);
+      const question = await questionRouter.getSmartQuestion(activeSubject, examType, year, forceLive);
       if (question) {
         if (subjectOverride) setSubject(subjectOverride);
         setQuestionQueue([question]);
@@ -560,6 +572,14 @@ export default function ExamArena() {
                               <span className="text-xs md:text-sm">
                                 {currentIndex < questionQueue.length - 1 ? `Next (${currentIndex + 2}/${questionQueue.length})` : 'Shuffle Node'}
                               </span>
+                            </button>
+
+                            <button 
+                              onClick={() => setAutoPreview(!autoPreview)}
+                              className={`w-full sm:w-auto flex items-center justify-center gap-3 px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter transition-all ${autoPreview ? 'bg-orange-500 text-white shadow-[0_0_20px_rgba(249,115,22,0.3)]' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                            >
+                              <Zap className={`w-5 h-5 ${autoPreview ? 'animate-pulse' : ''}`} />
+                              <span className="text-xs md:text-sm">{autoPreview ? 'STOP AUTO' : 'AUTO PREVIEW'}</span>
                             </button>
 
                             {/* --- STEP 3: THE AI BUTTON --- */}

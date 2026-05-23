@@ -3,6 +3,7 @@ import { useAuthStore } from '@/src/store/useAuthStore';
 import { useThemeStore } from '@/src/store/useThemeStore';
 import Navbar from '@/src/components/layout/Navbar';
 import ExamArena from '@/src/components/arena/ExamArena';
+import Syllabus from './Syllabus';
 import AIChatWidget from '@/src/components/ai/AIChatWidget';
 import KnowledgeHub from '@/src/components/hub/KnowledgeHub';
 import SolutionsEngine from '@/src/components/solutions/SolutionsEngine';
@@ -43,19 +44,7 @@ export default function Dashboard() {
       </div>
     );
     
-    if (view === 'syllabus') return (
-      <div className="max-w-6xl mx-auto px-6 pt-12">
-        <h2 className="text-3xl font-black text-white mb-8 border-l-4 border-cyan-500 pl-4">JAMB Official Syllabus</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {subjects.map((sub, i) => (
-             <div key={i} className="p-6 bg-white/5 border border-white/10 rounded-2xl flex justify-between items-center transition-all hover:bg-white/10">
-                <span className="font-bold text-lg">{sub.name}</span>
-                <span className="text-sm font-mono text-zinc-500 uppercase">Indexing Modules...</span>
-             </div>
-          ))}
-        </div>
-      </div>
-    );
+    if (view === 'syllabus') return <Syllabus />;
 
     if (view === 'scholar-stats') return (
       <div className="max-w-6xl mx-auto px-6 pt-12 flex flex-col items-center justify-center min-h-[400px] text-center">

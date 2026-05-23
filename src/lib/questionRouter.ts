@@ -10,17 +10,19 @@ import { logger } from './logger';
  * Determines whether to pull from Supabase Global Vault, Local Vault, or fetch fresh from ALOC API.
  */
 export const questionRouter = {
-  async getSmartQuestion(subject: string = 'english', type: string = 'utme', year?: string): Promise<ALOCQuestion> {
+  async getSmartQuestion(subject: string = 'english', type: string = 'utme', year?: string, forceLive: boolean = false): Promise<ALOCQuestion> {
     
     // 1. Check Local Vault First (Highest Priority for API reduction)
-    const localStats = cacheService.getVaultStats();
-    const localSubjectCount = localStats.bySubject[subject] || 0;
-    
-    if (localSubjectCount > 20 && Math.random() < 0.4) {
-      const cachedLocal = cacheService.fetchFromLocalVault(subject, type, year);
-      if (cachedLocal) {
-        logger.info("Question retrieved from Local Cache");
-        return { ...cachedLocal, source: 'vault' };
+    if (!forceLive) {
+      const localStats = cacheService.getVaultStats();
+      const localSubjectCount = localStats.bySubject[subject] || 0;
+      
+      if (localSubjectCount > 20 && Math.random() < 0.4) {
+        const cachedLocal = cacheService.fetchFromLocalVault(subject, type, year);
+        if (cachedLocal) {
+          logger.info("Question retrieved from Local Cache");
+          return { ...cachedLocal, source: 'vault' };
+        }
       }
     }
 
@@ -34,7 +36,7 @@ export const questionRouter = {
 
     try {
       // 3. 70% chance to fetch from Global Vault
-      const shouldCheckVault = Math.random() < 0.7;
+      const shouldCheckVault = !forceLive && Math.random() < 0.7;
       
       if (shouldCheckVault) {
         // Use a random offset approach for small/medium datasets
