@@ -10,7 +10,7 @@ import { logger } from './logger';
  * Determines whether to pull from Supabase Global Vault, Local Vault, or fetch fresh from ALOC API.
  */
 export const questionRouter = {
-  async getSmartQuestion(subject: string = 'english', type: string = 'utme', year?: string, forceLive: boolean = false): Promise<ALOCQuestion> {
+  async getSmartQuestion(subject: string = 'english', type: string = 'utme', year?: string, forceLive: boolean = false): Promise<ALOCQuestion | null> {
     
     // 1. Check Local Vault First (Highest Priority for API reduction)
     if (!forceLive) {
@@ -30,8 +30,8 @@ export const questionRouter = {
     if (!supabase) {
       const freshQuestions = await alocService.fetchLiveQuestions(subject, type, year, 1);
       const q = freshQuestions[0];
-      cacheService.saveToLocalVault(q);
-      return q;
+      if (q) cacheService.saveToLocalVault(q);
+      return q || null;
     }
 
     try {
@@ -73,7 +73,10 @@ export const questionRouter = {
       const freshQuestion = freshBatch[0];
 
       if (!freshQuestion) {
-        throw new Error("No live question available");
+        logger.warn("Live satellite returned empty cluster. Retrying fallback link...");
+        const backup = await alocService.fetchLiveQuestions(subject, type, year, 1);
+        if (backup[0]) return { ...backup[0], source: 'live' };
+        return null; 
       }
 
       // 5. Async Sync: Upsert to Global Vault & Local Cache
@@ -86,11 +89,15 @@ export const questionRouter = {
       };
 
     } catch (err) {
-      logger.error("Smart Router Error", err);
-      const backup = await alocService.fetchLiveQuestions(subject, type, year, 1);
-      const q = backup[0];
-      cacheService.saveToLocalVault(q);
-      return q;
+      logger.error("Smart Router Exception", err);
+      try {
+        const backup = await alocService.fetchLiveQuestions(subject, type, year, 1);
+        const q = backup[0];
+        if (q) cacheService.saveToLocalVault(q);
+        return q || null;
+      } catch (e) {
+        return null;
+      }
     }
   },
 

@@ -183,11 +183,16 @@ export default function ExamArena() {
         setCurrentIndex(0);
         setCurrentQuestion(question);
       } else {
-        setCurrentQuestion(null);
+        // If question is null and we are in autoPreview, just skip this tick
+        if (autoPreview) {
+          logger.warn("Auto-Preview: Satellite linkage intermittent. Skipping tick.");
+        } else {
+          setCurrentQuestion(null);
+        }
       }
     } catch (err) {
-      console.error(err);
-      setCurrentQuestion(null);
+      logger.error("Arena Neural Link Fault", err);
+      if (!autoPreview) setCurrentQuestion(null);
     } finally {
       setLoading(false);
     }
