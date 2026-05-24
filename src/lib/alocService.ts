@@ -5,28 +5,22 @@ import { ALOCQuestion } from '../types';
  */
 export const alocService = {
   async fetchLiveQuestions(subject: string = 'english', type: string = 'utme', year?: string, count: number = 1) {
-    // Subject Mapping for ALOC API
-    const mapping: Record<string, string> = {
-      'civiledu': 'civil',
-      'crk': 'religious',
-      'crs': 'religious',
-      'irs': 'religious',
-      'literature': 'literature',
-      'fineart': 'fineart'
-    };
-
-    const apiSubject = mapping[subject.toLowerCase()] || subject.toLowerCase();
-    let url = `/api/external/aloc?subject=${apiSubject}&type=${type}&count=${count}`;
+    let url = `/api/aloc/q/${count}?subject=${subject}&type=${type}`;
     
     if (year && year !== 'all' && year !== '') {
       url += `&year=${year}`;
     }
 
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
 
       if (!response.ok) {
-        throw new Error(`ALOC_PROXY_REJECT: ${response.status}`);
+        throw new Error(`ALOC_API_REJECT: ${response.status}`);
       }
 
       const data = await response.json();

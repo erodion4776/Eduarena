@@ -33,6 +33,16 @@ const originalFetch = window.fetch;
 
 Object.defineProperty(window, 'fetch', {
   value: async (input: RequestInfo | URL, init?: RequestInit) => {
+    const isFullStackContainer = 
+      window.location.hostname === 'localhost' || 
+      window.location.hostname === '127.0.0.1' || 
+      window.location.hostname.endsWith('.run.app') ||
+      window.location.hostname.includes('googleusercontent.com');
+
+    if (isFullStackContainer) {
+      return originalFetch(input, init);
+    }
+
     const url = typeof input === 'string' ? input : input.toString();
 
     // If not an API request, let it through

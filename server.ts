@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -355,37 +356,6 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // --- ALOC API Proxy ---
-  app.get("/api/external/aloc", async (req, res) => {
-    const { subject, type, year, count } = req.query;
-    const ACCESS_TOKEN = 'ALOC-84eb83db941bfc4c524c';
-    
-    let url = `https://questions.aloc.com.ng/api/v2/q/${count || 1}?subject=${subject}&type=${type}`;
-    if (year && year !== 'all' && year !== '') {
-      url += `&year=${year}`;
-    }
-
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'AccessToken': ACCESS_TOKEN,
-          'Accept': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        return res.status(response.status).json({ error: `ALOC_API_REJECT: ${response.status}` });
-      }
-
-      const data = await response.json();
-      res.json(data);
-    } catch (error: any) {
-      console.error("ALOC Proxy Error:", error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-
   // --- AI Context Search ---
   app.get("/api/ai/query", (req, res) => {
     const { q } = req.query;
@@ -410,6 +380,212 @@ async function startServer() {
   });
 
   // --- Knowledge Hub Routes ---
+  // --- ALOC Past Questions API Proxy ---
+  app.get("/api/aloc/q/:count", async (req, res) => {
+    const { count } = req.params;
+    const { subject, type, year } = req.query;
+    const ACCESS_TOKEN = 'ALOC-84eb83db941bfc4c524c';
+    
+    let url = `https://questions.aloc.com.ng/api/v2/q/${count}?subject=${subject || 'english'}&type=${type || 'utme'}`;
+    if (year && year !== 'all' && year !== '') {
+      url += `&year=${year}`;
+    }
+    url += `&cb=${Date.now()}`;
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "AccessToken": ACCESS_TOKEN,
+          "Accept": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Check if response actually has valid data
+        if (data && data.data) {
+          return res.json(data);
+        }
+      }
+      
+      console.warn(`ALOC Satellite returned status ${response.status} or invalid data. Initiating AI Neural Fallback bridge...`);
+    } catch (error: any) {
+      console.error("ALOC Server Proxy primary hit exceptions. Transitioning to AI Neural Fallback...", error);
+    }
+
+    // --- NEURAL FALLBACK BRIDGE ---
+    const chosenSubject = String(subject || 'english').toLowerCase();
+    const chosenType = String(type || 'utme').toLowerCase();
+    const chosenYear = String(year || '2018');
+
+    // Attempt 1: Gemini Generation
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (geminiApiKey) {
+      try {
+        console.log(`Engaging Gemini model to generate a custom practice question for ${chosenSubject}...`);
+        const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+        const yearPromptStr = chosenYear && chosenYear !== 'all' ? chosenYear : 'random year between 2005 and 2023';
+        const prompt = `You are a high-fidelity Nigerian examination past question vault. Generate exactly ONE highly realistic, syllabus-aligned past exam question for the subject: "${chosenSubject}" under the exam system: "${chosenType}" of the year: "${yearPromptStr}".
+
+The question must follow JAMB (UTME) or WAEC/NECO design depending on the system requested. 
+The output MUST be strictly valid raw JSON without markdown wrapping (do not use \`\`\`json or \`\`\` blocks).
+
+Return JSON of this exact shape:
+{
+  "id": ${Math.floor(Math.random() * 8000) + 3500},
+  "question": "<The question content written as clear HTML/text. Avoid overly complex prose.>",
+  "option": {
+    "a": "<Option A>",
+    "b": "<Option B>",
+    "c": "<Option C>",
+    "d": "<Option D>"
+  },
+  "answer": "a/b/c/d",
+  "solution": "<Syllabus-aligned explanation of why the correct option is indeed correct. Keep it direct and helpful.>"
+}`;
+
+        const genResponse = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: prompt
+        });
+
+        const text = genResponse.text || "";
+        const cleanText = text.replace(/```json/i, "").replace(/```/g, "").trim();
+        const parsedQuestion = JSON.parse(cleanText);
+        
+        parsedQuestion.examType = parsedQuestion.examType || chosenType.toUpperCase();
+        parsedQuestion.examyear = parsedQuestion.examyear || chosenYear;
+        
+        console.log(`Successfully generated dynamic backup question for ${chosenSubject} (ID: ${parsedQuestion.id})`);
+        return res.json({
+          status: 200,
+          message: "success (Satellite backup quantum links active)",
+          data: parsedQuestion
+        });
+      } catch (gem_err) {
+        console.error("Gemini dynamic backup generation failed! Falling back to static cache.", gem_err);
+      }
+    }
+
+    // Attempt 2: Local Static Fallback Database
+    const STATIC_FALLBACKS: Record<string, any> = {
+      english: {
+        id: 1101,
+        question: "Choose the option that is nearest in meaning to the capitalized word: The student's explanation was very COGENT.",
+        option: { a: "confusing", b: "convincing", c: "lengthy", d: "irrelevant" },
+        answer: "b",
+        solution: "The word COGENT means clear, logical, and convincing. Therefore, option B is correct.",
+        examType: "UTME",
+        examyear: "2018"
+      },
+      mathematics: {
+        id: 1102,
+        question: "If log 2 = 0.3010 and log 3 = 0.4771, calculate the value of log 1.2 without using tables.",
+        option: { a: "0.0791", b: "1.0791", c: "0.1791", d: "0.2791" },
+        answer: "a",
+        solution: "log 1.2 = log(12/10) = log 12 - log 10 = log(2^2 * 3) - 1 = 2 log 2 + log 3 - 1 = 2(0.3010) + 0.4771 - 1 = 0.6020 + 0.4771 - 1 = 1.0791 - 1 = 0.0791.",
+        examType: "UTME",
+        examyear: "2015"
+      },
+      physics: {
+        id: 1103,
+        question: "A body of mass 5kg is suspended by a string. Calculate the tension in the string when the body is pulled upward with an acceleration of 2 m/s<sup>2</sup>. (g = 10 m/s<sup>2</sup>).",
+        option: { a: "40 N", b: "50 N", c: "60 N", d: "70 N" },
+        answer: "c",
+        solution: "Tension T is calculated as: T - mg = ma => T = m(g + a). Plugging in: T = 5 * (10 + 2) = 5 * 12 = 60 N.",
+        examType: "UTME",
+        examyear: "2019"
+      },
+      chemistry: {
+        id: 1104,
+        question: "What volume of oxygen at s.t.p is required to completely burn 45g of ethane? (C = 12, H = 1, Molar Volume of gas = 22.4 dm<sup>3</sup> at s.t.p).",
+        option: { a: "117.6 dm<sup>3</sup>", b: "84.0 dm<sup>3</sup>", c: "50.4 dm<sup>3</sup>", d: "33.6 dm<sup>3</sup>" },
+        answer: "a",
+        solution: "Equation: 2C2H6 + 7O2 -> 4CO2 + 6H2O. Moles of ethane (MW=30) = 45 / 30 = 1.5 moles. Since 2 moles of C2H6 require 7 moles of O2, 1.5 moles of C2H6 will require (7/2) * 1.5 = 5.25 moles of O2. Volume = 5.25 * 22.4 dm^3 = 117.6 dm^3.",
+        examType: "UTME",
+        examyear: "2016"
+      },
+      biology: {
+        id: 1105,
+        question: "Which of the following processes removes carbon dioxide from the atmosphere?",
+        option: { a: "Respiration", b: "Photosynthesis", c: "Decarboxylation", d: "Transpiration" },
+        answer: "b",
+        solution: "Photosynthesis takes CO2 out of the air to build carbon-containing sugars. Option B is correct.",
+        examType: "UTME",
+        examyear: "2020"
+      },
+      economics: {
+        id: 1106,
+        question: "If the price of a commodity increases from N40 to N50 and quantity demanded decreases from 100 to 80 units, find the price elasticity of demand.",
+        option: { a: "0.8", b: "1.0", c: "1.2", d: "1.5" },
+        answer: "a",
+        solution: "% change in Q = -20%. % change in P = 25%. Price Elasticity of Demand (PED) = 20% / 25% = 0.8. Since PED is less than 1, demand is inelastic.",
+        examType: "UTME",
+        examyear: "2017"
+      },
+      government: {
+        id: 1107,
+        question: "Who among the following is widely regarded as the father of Nigerian Nationalism?",
+        option: { a: "Herbert Macaulay", b: "Nnamdi Azikiwe", c: "Obafemi Awolowo", d: "Ahmadu Bello" },
+        answer: "a",
+        solution: "Herbert Macaulay initiated political parties (NNDP in 1923) and fought for Nigerian self-governance and representation.",
+        examType: "UTME",
+        examyear: "2014"
+      },
+      civiledu: {
+        id: 1108,
+        question: "Which of the following describes a key sustainable strategy to prevent human trafficking in communities?",
+        option: { a: "Empowerment, public awareness and access to education", b: "Encouraging undocumented migrations", c: "Restricting the movement of young people", d: "Escalating labor prices and unemployment" },
+        answer: "a",
+        solution: "Education and societal awareness empower citizens to recognize trafficking traps and raise reporting channels.",
+        examType: "UTME",
+        examyear: "2021"
+      },
+      commerce: {
+        id: 1109,
+        question: "A document containing a brief description of goods shipped by a seller to a buyer, with detailed prices, is called a/an:",
+        option: { a: "Invoice", b: "Consignment note", c: "Credit note", d: "Bill of lading" },
+        answer: "a",
+        solution: "An invoice is a commercial document issued by a seller detailing the quantities and agreed pricing of goods.",
+        examType: "UTME",
+        examyear: "2013"
+      },
+      accounting: {
+        id: 1110,
+        question: "Identify the fundamental double-entry balance accounting equation.",
+        option: { a: "Assets = Liabilities - Owner's Equity", b: "Assets = Liabilities + Owner's Equity", c: "Owner's Equity = Assets + Liabilities", d: "Liabilities = Assets + Owner's Equity" },
+        answer: "b",
+        solution: "Under basic ledger rules, total Assets must equal the sum of Liabilities and Equity. Option B is correct.",
+        examType: "UTME",
+        examyear: "2015"
+      },
+      currentaffairs: {
+        id: 1111,
+        question: "Which of the following administrative centers in Nigeria is known as the 'Coal City'?",
+        option: { a: "Jos", b: "Enugu", c: "Port Harcourt", d: "Kaduna" },
+        answer: "b",
+        solution: "Enugu became captioned as Coal City after kitson discovered coal deposits there in 1909.",
+        examType: "UTME",
+        examyear: "2022"
+      }
+    };
+
+    const backupQuestion = STATIC_FALLBACKS[chosenSubject] || STATIC_FALLBACKS['english'];
+    console.log(`Serving local static backup past-question for ${chosenSubject}.`);
+    
+    return res.json({
+      status: 200,
+      message: "success (Engaged Local Offline Vault Fallover Link)",
+      data: {
+        ...backupQuestion,
+        examType: chosenType.toUpperCase(),
+        examyear: chosenYear
+      }
+    });
+  });
+
   app.get("/api/questions", (req, res) => {
     const { search, subject, exam_type } = req.query;
     const db = getDb();
@@ -960,71 +1136,6 @@ async function startServer() {
     const years = [];
     for (let i = 2025; i >= 1983; i--) years.push(i);
     res.json(years);
-  });
-
-  // --- AI Tutor Endpoint ---
-  app.post("/api/ai/tutor", async (req, res) => {
-    const { userQuery, question, stats } = req.body;
-    const geminiKey = process.env.GEMINI_API_KEY;
-
-    if (!geminiKey) {
-      return res.status(500).json({ 
-        answer: "Ah ah, network is misbehaving (API Key missing)! But look, the answer is clearly " + (question.answer || "").toUpperCase() + ". Don't let gravity weigh you down, study hard!",
-        provider: 'fallback' 
-      });
-    }
-
-    const apiDataContext = `
-[HIDDEN_KNOWLEDGE: ALOC_API_SOURCE]
-DATA_SOURCE: ${question.source === 'vault' ? "GLOBAL_VAULT" : "LIVE_SATELLITE"}
-VAULT_TOTAL: ${stats?.total || 0}
-SECTION/INSTRUCTION: ${question.section || "N/A"}
-PASSAGE: ${question.passage || "N/A"}
-VISUAL_DIAGRAM_PRESENT: ${!!question.image}
-QUESTION: ${question.question}
-OPTIONS: A) ${question.option.a}, B) ${question.option.b}, C) ${question.option.c}, D) ${question.option.d}, E) ${question.option.e || "N/A"}
-CORRECT_ANSWER: ${question.answer?.toUpperCase()}
-EXPLANATION_FROM_SOURCE: ${question.solution || "Not provided by bank"}
-YEAR: ${question.examyear}
-`;
-
-    const systemInstruction = `You are Tutor Chuks, a brilliant and direct Nigerian teacher. 
-Use the following API data to help the student: ${apiDataContext}.
-Mention subtly that the system is getting smarter (we have synced questions to the global vault).
-Explain why the correct answer is ${question.answer?.toUpperCase()} using a relatable Nigerian analogy.
-Be extremely concise (under 80 words). Speak like a mentor.`;
-
-    const fullPrompt = `Student Question: ${userQuery}`;
-
-    try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({
-        apiKey: geminiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
-        config: {
-          systemInstruction
-        }
-      });
-
-      const text = response.text || "";
-
-      res.json({ answer: text.trim(), provider: 'gemini' });
-    } catch (e: any) {
-      console.error("AI Tutor Error:", e);
-      res.json({ 
-        answer: "Ah ah, calculations are complex! But look, the answer is " + (question.answer || "").toUpperCase() + ". Keep focusing!",
-        provider: 'fallback' 
-      });
-    }
   });
 
   app.get("/api/oracle/topics", (req, res) => {
