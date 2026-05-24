@@ -110,7 +110,8 @@ export default function DataHarvester() {
           if (stopRequested.current) break;
 
           try {
-            const url = `https://questions.aloc.com.ng/api/v2/q?subject=${currentSub.toLowerCase()}&type=${exam.toLowerCase()}`;
+            // Use the proxy endpoint with custom token delegation support to avoid CORS / quota block limits
+            const url = `/api/aloc/q/1?subject=${currentSub.toLowerCase()}&type=${exam.toLowerCase()}`;
             const response = await fetch(url, {
               headers: { 
                 'Accept': 'application/json', 

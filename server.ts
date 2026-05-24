@@ -381,10 +381,13 @@ async function startServer() {
 
   // --- Knowledge Hub Routes ---
   // --- ALOC Past Questions API Proxy ---
-  app.get("/api/aloc/q/:count", async (req, res) => {
-    const { count } = req.params;
+  app.get(["/api/aloc/q", "/api/aloc/q/:count"], async (req, res) => {
+    const count = req.params.count || "1";
     const { subject, type, year } = req.query;
-    const ACCESS_TOKEN = 'ALOC-84eb83db941bfc4c524c';
+    const headerToken = req.headers.accesstoken || req.headers["accesstoken"];
+    const ACCESS_TOKEN = typeof headerToken === 'string' && headerToken.trim() !== '' 
+      ? headerToken.trim() 
+      : 'ALOC-84eb83db941bfc4c524c';
     
     let url = `https://questions.aloc.com.ng/api/v2/q/${count}?subject=${subject || 'english'}&type=${type || 'utme'}`;
     if (year && year !== 'all' && year !== '') {
