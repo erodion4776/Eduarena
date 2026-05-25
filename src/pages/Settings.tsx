@@ -1132,7 +1132,7 @@ export default function Settings() {
 
       {/* 3. STICKY MOBILE SAVE TRIGGER ROW */}
       {expandedMobileTab && expandedMobileTab !== 'danger' && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-zinc-900/95 border-t border-white/10 backdrop-blur-md z-40 flex justify-between items-center bg-opacity-95 text-xs">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-zinc-900 border-t border-white/10 z-40 flex justify-between items-center text-xs">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             <span className="text-zinc-400 font-mono">Modifying:</span>

@@ -44,7 +44,7 @@ export default function AIChatWidget() {
             initial={{ opacity: 0, y: 50, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            className="fixed bottom-24 right-6 w-80 md:w-[400px] h-[550px] z-50 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(34,211,238,0.15)] border border-white/10 bg-slate-950/90 backdrop-blur-2xl flex flex-col font-sans"
+            className="fixed bottom-24 right-6 w-80 md:w-[400px] h-[550px] z-50 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(34,211,238,0.15)] border border-white/10 bg-slate-950 flex flex-col font-sans"
           >
             <div className="bg-gradient-to-r from-cyan-900/40 to-slate-900/80 p-4 border-b border-white/10 flex items-center justify-between">
               <div className="flex items-center gap-3">

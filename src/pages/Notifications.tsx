@@ -353,7 +353,7 @@ export default function Notifications() {
             <p className="text-sm font-medium">Re-indexing alert history...</p>
           </div>
         ) : getFilteredNotifications().length === 0 ? (
-          <Card className="bg-zinc-900/50 border-white/5 p-12 text-center space-y-4 rounded-3xl backdrop-blur-md">
+          <Card className="bg-zinc-900/80 border-white/5 p-12 text-center space-y-4 rounded-3xl">
             <BellOff className="w-12 h-12 text-zinc-600 mx-auto" />
             <div>
               <h3 className="text-lg font-bold text-zinc-300">Clean Slate!</h3>

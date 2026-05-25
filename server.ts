@@ -612,7 +612,19 @@ Return JSON of this exact shape:
     }
     if (subject) {
       const sLower = String(subject).toLowerCase().trim();
-      filtered = filtered.filter((q: any) => (q.subject || "").toLowerCase().trim() === sLower);
+      const subjectMap: Record<string, string> = {
+        's1': 'mathematics',
+        's2': 'biology',
+        's3': 'physics',
+        's4': 'chemistry',
+        's5': 'english',
+        's6': 'government'
+      };
+      filtered = filtered.filter((q: any) => {
+        const qSubName = q.subject ? String(q.subject).toLowerCase().trim() : '';
+        const mappedName = q.subject_id ? (subjectMap[q.subject_id] || '') : '';
+        return qSubName === sLower || mappedName === sLower;
+      });
     }
     if (exam_type) {
       const eLower = String(exam_type).toLowerCase().trim();

@@ -195,11 +195,11 @@ export default function ExamOracle() {
                     }`}
                   >
                     <div className={`absolute inset-0 bg-gradient-to-br ${body.theme} opacity-100 group-hover:scale-110 transition-transform duration-700`} />
-                    <div className="absolute inset-0 bg-white/5 backdrop-blur-[2px]" />
+                    <div className="absolute inset-0 bg-white/5" />
                     <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10 pointer-events-none" />
                     
                     <div className="relative z-10 flex justify-between items-start">
-                      <div className="p-4 bg-white/10 rounded-3xl backdrop-blur-xl border border-white/20">
+                      <div className="p-4 bg-white/10 rounded-3xl border border-white/20">
                         <BookOpen className="w-8 h-8 text-white" />
                       </div>
                       <Badge className={`${body.badgeBg} ${body.badgeText} border-none font-black italic tracking-widest px-4 py-1.5`}>1983 - 2025</Badge>

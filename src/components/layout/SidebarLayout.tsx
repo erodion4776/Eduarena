@@ -44,7 +44,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
       {isOpen && (
         <div 
           onClick={() => setIsOpen(false)} 
-          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm lg:hidden transition-all duration-300"
+          className="fixed inset-0 z-40 bg-black/80 lg:hidden transition-all duration-300"
         />
       )}
 
@@ -88,7 +88,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
       </aside>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto bg-zinc-950 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 bg-zinc-950 overflow-hidden">
         <Navbar toggleSidebar={() => setIsOpen(!isOpen)} />
         <div className="flex-1 overflow-y-auto">
           {children}

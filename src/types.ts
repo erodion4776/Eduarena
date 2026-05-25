@@ -5,6 +5,7 @@ export interface ALOCQuestion {
   option: { a: string; b: string; c: string; d: string; e?: string };
   answer: string;
   solution: string;
+  explanation?: string;
   examType: string;
   examyear: string;
   subject?: string;

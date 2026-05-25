@@ -1,941 +1,625 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Zap, 
-  RefreshCw, 
   BrainCircuit, 
   ChevronRight, 
-  Terminal, 
-  Cpu, 
-  MessageSquare,
-  ShieldCheck,
+  ChevronLeft,
+  Clock, 
+  Award, 
+  FileText, 
+  Lock, 
+  CheckCircle2, 
+  XCircle, 
+  Sparkles, 
+  Volume2, 
+  VolumeX, 
   AlertCircle,
-  Volume2,
-  Square,
-  Home,
-  ChevronLeft
+  HelpCircle,
+  TrendingUp,
+  RotateCcw
 } from 'lucide-react';
-import { alocService } from '../lib/alocService';
+import { useNeuralVaultStore } from '../store/useNeuralVaultStore';
 import { aiTutor } from '../lib/aiTutor';
-import { ALOCQuestion, TutorResponse } from '../types';
-import { cacheService } from '../lib/cacheService';
-import { questionRouter } from '../lib/questionRouter';
-import { supabase } from '../lib/supabase';
-import { logger } from '../lib/logger';
 import { voiceService } from '../lib/voiceService';
+import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 
 export default function ExamArena() {
   const navigate = useNavigate();
-  const [currentQuestion, setCurrentQuestion] = useState<ALOCQuestion | null>(null);
-  const [questionQueue, setQuestionQueue] = useState<ALOCQuestion[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const { 
+    currentSession, 
+    isLoading, 
+    answerQuestion, 
+    setCurrentIndex, 
+    setActiveSubjectIndex, 
+    submitSession,
+    hydrateSession
+  } = useNeuralVaultStore();
+
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [aiResponse, setAiResponse] = useState<any>(null);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
-  const [aiResponse, setAiResponse] = useState<TutorResponse | null>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
-  const [subject, setSubject] = useState('english');
-  const [examType, setExamType] = useState('utme');
-  const [year, setYear] = useState('');
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
-  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  
-  // -- NEW STATE FOR EXAM FEATURES --
-  const [examMode, setExamMode] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(() => {
-    const saved = localStorage.getItem('examRemainingTime');
-    return saved ? parseInt(saved, 10) : 1800;
-  }); // 30 minutes
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
-  const [analysisResult, setAnalysisResult] = useState<any[] | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  const performAnalysis = async () => {
-    setIsAnalyzing(true);
-    try {
-        const response = await fetch('/api/exam/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userAnswers, questions: questionQueue })
-        });
-        const data = await response.json();
-        setAnalysisResult(data.analysis);
-        localStorage.removeItem('examRemainingTime');
-    } catch (e) {
-        console.error("Analysis failed", e);
-    } finally {
-        setIsAnalyzing(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isSubmitted && !analysisResult && !isAnalyzing) {
-        performAnalysis();
-    }
-  }, [isSubmitted, analysisResult, isAnalyzing]);
-
-  useEffect(() => {
-    if (examMode && !isSubmitted) {
-        localStorage.setItem('examRemainingTime', timeLeft.toString());
-    }
-  }, [timeLeft, examMode, isSubmitted]);
-  
-  const [vaultSize, setVaultSize] = useState(0);
-  const [globalVaultCount, setGlobalVaultCount] = useState<number | null>(null);
-  const [showLogs, setShowLogs] = useState(false);
-  const [debugLogs, setDebugLogs] = useState(logger.getLogs());
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  const [imageLoading, setImageLoading] = useState(true);
-  const [imageRetry, setImageRetry] = useState(0);
-  const [autoPreview, setAutoPreview] = useState(false);
+  const [showResultsModal, setShowResultsModal] = useState(false);
 
-  const IMAGE_BASE_URL = 'https://questions.aloc.com.ng/storage/';
-
-  // Auto Preview Effect
+  // Hydrate session on load
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (autoPreview && !loading) {
-      interval = setInterval(() => {
-        fetchNewQuestion(true, undefined, true);
-      }, 2000);
-    }
-    return () => clearInterval(interval);
-  }, [autoPreview, loading]);
+    hydrateSession();
+  }, [hydrateSession]);
 
-  const getImageUrl = () => {
-    if (!currentQuestion?.image || currentQuestion.image.trim() === "") return '';
-    if (currentQuestion.image.startsWith('http')) return currentQuestion.image;
-    return `https://questions.aloc.com.ng/storage/${currentQuestion.image}`;
-  };
+  // Synchronized High-Precision Countdown Timer with Auto-Submit
+  useEffect(() => {
+    if (!currentSession || currentSession.isSubmitted) return;
 
-  const showDemoImage = () => {
-    const demoQuestion: ALOCQuestion = {
-      id: 9999,
-      subject: "physics",
-      examType: "UTME",
-      examyear: "2024",
-      question: "Calculate the total resistance in the circuit shown below.",
-      option: { a: "5.0 Ω", b: "10.0 Ω", c: "15.0 Ω", d: "20.0 Ω", e: "" },
-      answer: "a",
-      solution: "...",
-      image: "https://www.allaboutcircuits.com/uploads/articles/three-resistor-parallel-circuit.jpg",
-      source: "vault"
+    const calculateTimeLeft = () => {
+      const elapsed = Math.floor((Date.now() - currentSession.startTime) / 1000);
+      return Math.max(0, currentSession.duration - elapsed);
     };
-    setCurrentQuestion(demoQuestion);
-    setQuestionQueue([demoQuestion]);
-    setCurrentIndex(0);
-    logger.info("🎬 Demo Mode: Loading hardcoded visual test question.");
-  };
 
-  const handleImageError = () => {
-    logger.error(`Image failed to render: ${getImageUrl()}`);
-    setImageError(true);
-  };
+    setTimeLeft(calculateTimeLeft());
 
-  // Timer effect
-  useEffect(() => {
-    if (examMode && !isSubmitted && timeLeft > 0) {
-      const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
-      return () => clearInterval(timer);
-    } else if (timeLeft === 0 && !isSubmitted) {
-      setIsSubmitted(true);
-    }
-  }, [examMode, isSubmitted, timeLeft]);
+    const secondsTimer = setInterval(() => {
+      const remaining = calculateTimeLeft();
+      setTimeLeft(remaining);
+      
+      if (remaining <= 0) {
+        clearInterval(secondsTimer);
+        submitSession().then(() => {
+          setShowResultsModal(true);
+        });
+        toast.error("MASTER TIMER COMPLETED! Submitting exam automatically.", {
+          duration: 10000
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(secondsTimer);
+  }, [currentSession, submitSession]);
 
   useEffect(() => {
     voiceService.setChangeListener(setIsSpeaking);
     return () => voiceService.stop();
   }, []);
 
-  useEffect(() => {
-    const unsubscribe = logger.subscribe(setDebugLogs);
-    return unsubscribe;
-  }, []);
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center space-y-4">
+        <div className="w-12 h-12 border-4 border-cyan-500/20 border-t-cyan-400 rounded-full animate-spin" />
+        <p className="text-zinc-400 text-sm font-black uppercase tracking-widest animate-pulse">Engaging Quantum Link...</p>
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    const handleVaultSync = () => {
-      logger.info("Real-time sync detected. Refreshing Vault Counter...");
-      fetchGlobalVaultStats();
-    };
-    window.addEventListener('VAULT_SYNCED', handleVaultSync);
-    return () => window.removeEventListener('VAULT_SYNCED', handleVaultSync);
-  }, []);
+  // Active Link Inactive View (Conceptual Resilience State)
+  if (!currentSession) {
+    return (
+      <div className="min-h-full w-full text-white p-4 md:p-8 flex items-center justify-center font-sans">
+        <motion.div 
+          initial={{ opacity: 0, y: 15 }} 
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full bg-zinc-900/90 border border-white/5 p-8 rounded-3xl text-center space-y-6 shadow-2xl relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 blur-3xl rounded-full" />
+          <div className="p-4 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
+            <Lock className="w-8 h-8 animate-pulse" />
+          </div>
+          <div>
+            <h1 className="text-xl font-black uppercase tracking-wider text-white">NeuralLink Inactive</h1>
+            <p className="text-xs text-zinc-500 mt-2 leading-relaxed">
+              No active test block has been authorized. Select single or compile a 4-subject JAMB block with a unified timer from the command deck.
+            </p>
+          </div>
+          <Button 
+            onClick={() => navigate('/')} 
+            className="w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-black rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-cyan-600/15"
+          >
+            Configure CBT Block
+          </Button>
+        </motion.div>
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    const handleQuestionSynced = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail) {
-        const { id, subject } = customEvent.detail;
-        toast.success(`Question Sent to Cloud!`, {
-          description: `Question ID ${id} (${subject}) was successfully stored in your Supabase DB.`,
-          duration: 4000
-        });
-      }
-    };
-    window.addEventListener('VAULT_QUESTION_SYNCED', handleQuestionSynced);
-    return () => window.removeEventListener('VAULT_QUESTION_SYNCED', handleQuestionSynced);
-  }, []);
+  const { subjects, activeSubjectIndex, isSubmitted, userAnswers, examType } = currentSession;
+  const activeSubject = subjects[activeSubjectIndex];
+  
+  if (!activeSubject || !activeSubject.questions || activeSubject.questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <AlertCircle className="w-12 h-12 text-rose-500" />
+        <h2 className="text-lg font-black">No questions generated.</h2>
+        <p className="text-sm text-zinc-400 max-w-sm">Failed to retrieve proper questions of this subject from satellite or local caches.</p>
+        <Button onClick={() => navigate('/')} className="bg-zinc-800 rounded-xl">Return to Command Deck</Button>
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    setVaultSize(cacheService.getVaultStats().total);
-    fetchGlobalVaultStats();
-  }, [currentQuestion]);
+  const currentIndex = activeSubject.currentIndex;
+  const currentQuestion = activeSubject.questions[currentIndex];
 
-  useEffect(() => {
-    questionRouter.migrateLocalToGlobal();
-  }, []);
+  const formatTimer = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const secs = sec % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
-  const fetchGlobalVaultStats = async () => {
-    if (!supabase) return;
-    try {
-      const { count } = await supabase
-        .from('global_questions_vault')
-        .select('*', { count: 'exact', head: true });
-      if (count !== null) setGlobalVaultCount(count);
-    } catch (e) {
-      logger.error("Global Stats Exception", e);
+  const getAnsweredCountForSubject = (sub: typeof activeSubject) => {
+    return sub.questions.filter(q => userAnswers[String(q.id)] !== undefined).length;
+  };
+
+  const currentAnswer = currentQuestion ? userAnswers[String(currentQuestion.id)] : undefined;
+
+  const handleOptionSelect = (key: string) => {
+    if (isSubmitted) return;
+    answerQuestion(currentQuestion.id, key);
+  };
+
+  const handlePrevQuestion = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex(activeSubjectIndex, currentIndex - 1);
+      setAiResponse(null);
     }
   };
 
-  useEffect(() => {
-    fetchNewQuestion(true);
-  }, [subject, examType, year]);
-
-  const fetchNewQuestion = async (isFreshBatch: boolean = false, subjectOverride?: string, forceLive: boolean = false) => {
-    setLoading(true);
-    setAiResponse(null);
-    setSelectedOption(null);
-    setIsCorrect(null);
-    setImageError(false);
-    setImageLoading(true);
-    setImageRetry(0);
-
-    const activeSubject = subjectOverride || subject;
-    
-    if (!isFreshBatch && currentIndex < questionQueue.length - 1 && !subjectOverride && !forceLive) {
-      const nextIdx = currentIndex + 1;
-      const nextQuestion = questionQueue[nextIdx];
-      if (nextQuestion) {
-        setCurrentIndex(nextIdx);
-        setCurrentQuestion(nextQuestion);
-        setLoading(false);
-        return;
-      }
-    }
-
-    try {
-      const question = await questionRouter.getSmartQuestion(activeSubject, examType, year, forceLive);
-      if (question) {
-        if (subjectOverride) setSubject(subjectOverride);
-        setQuestionQueue([question]);
-        setCurrentIndex(0);
-        setCurrentQuestion(question);
-      } else {
-        // If question is null and we are in autoPreview, just skip this tick
-        if (autoPreview) {
-          logger.warn("Auto-Preview: Satellite linkage intermittent. Skipping tick.");
-        } else {
-          setCurrentQuestion(null);
-        }
-      }
-    } catch (err) {
-      logger.error("Arena Neural Link Fault", err);
-      if (!autoPreview) setCurrentQuestion(null);
-    } finally {
-      setLoading(false);
+  const handleNextQuestion = () => {
+    if (currentIndex < activeSubject.questions.length - 1) {
+      setCurrentIndex(activeSubjectIndex, currentIndex + 1);
+      setAiResponse(null);
     }
   };
 
-  const handleOptionSelect = (option: string) => {
-    if (!currentQuestion) return;
-    
-    // In Exam Mode, we allow changing answers, but we don't reveal correctness
-    if (examMode) {
-      setUserAnswers(prev => ({ ...prev, [currentQuestion.id]: option }));
-      setSelectedOption(option);
-      return;
-    }
-    
-    if (selectedOption) return; // For non-exam mode, lock once selected
-    
-    setSelectedOption(option);
-    
-    const correct = option.toLowerCase() === (currentQuestion.answer || '').toLowerCase();
-    setIsCorrect(correct);
-    if (!correct) {
-      runNeuralAnalysis(`I picked option ${option.toUpperCase()}, but it's wrong.`);
-    }
-  };
-
-  const runNeuralAnalysis = async (customQuery?: string) => {
-    if (!currentQuestion) return;
+  // AI Chuks Live Interaction Block (Masked during assessment)
+  const queryTutorChuks = async () => {
+    if (!isSubmitted) return;
     setIsAiProcessing(true);
     setShowAiPanel(true);
     try {
-      const res = await aiTutor.askTutorChuksLive(customQuery || "Explain...", currentQuestion);
-      setAiResponse(res);
-    } catch (err) {
-      console.error(err);
+      const response = await aiTutor.askTutorChuksLive("Explain the logic and concept step-by-step.", currentQuestion);
+      setAiResponse(response);
+    } catch (e) {
+      toast.error("Failed to route link to Tutor Chuks.");
     } finally {
       setIsAiProcessing(false);
     }
   };
 
+  // Calculate scores on total block
+  let totalSessionQuestions = 0;
+  let correctSessionAnswers = 0;
+  subjects.forEach(s => {
+    s.questions.forEach(q => {
+      totalSessionQuestions++;
+      if (userAnswers[String(q.id)]?.toLowerCase() === (q.answer || '').toLowerCase()) {
+        correctSessionAnswers++;
+      }
+    });
+  });
+
   return (
-    <div className="min-h-screen bg-[#050505] text-white p-4 md:p-8 font-sans selection:bg-emerald-500/30 overflow-x-hidden w-full">
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* --- EXAM CONTROLS --- */}
-        <div className="flex gap-4 mb-4">
+    <div className="min-h-full text-white p-4 md:p-8 font-sans selection:bg-cyan-500/30 overflow-x-hidden w-full relative">
+      <div className="max-w-7xl mx-auto space-y-6">
+
+        {/* HUD CONTROL DISPLAY HEADER */}
+        <header className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6 bg-zinc-900 border border-white/5 p-4 md:p-6 rounded-3xl">
+          <div className="flex items-center gap-4">
             <button 
-                onClick={() => setExamMode(!examMode)}
-                className={`px-4 py-2 rounded-full text-xs font-bold ${examMode ? 'bg-rose-500 text-white' : 'bg-zinc-800 text-zinc-400'}`}
+              onClick={() => navigate('/')} 
+              className="p-3 bg-zinc-950 border border-white/5 hover:bg-zinc-800 rounded-2xl transition-all"
             >
-                {examMode ? 'EXAM MODE: ACTIVE' : 'EXAM MODE: OFF'}
+              <ChevronLeft className="w-5 h-5 text-zinc-400" />
             </button>
-            {examMode && (
-                <div className="px-4 py-2 bg-zinc-900 text-cyan-400 font-mono rounded-full text-xs">
-                    {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
-                </div>
-            )}
-        </div>
-        
-        {/* Navigation Escape */}
-        <div className="flex items-center justify-between">
-           <button 
-             onClick={() => navigate('/')}
-             className="group flex items-center gap-3 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all"
-           >
-              <ChevronLeft className="w-4 h-4 text-zinc-500 group-hover:text-cyan-400 transition-colors" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 group-hover:text-white transition-colors">Return to HQ</span>
-           </button>
-
-           <div className="flex items-center gap-2">
-              <Home className="w-4 h-4 text-zinc-700" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-700">Sector: Arena_Command</span>
-           </div>
-        </div>
-
-        {/* --- STEP 3: NEURAL LINK STATUS BAR --- */}
-        <div className={`flex flex-col md:flex-row items-center justify-between gap-4 px-4 md:px-6 py-3 border rounded-2xl md:rounded-full backdrop-blur-xl transition-colors duration-300 ${
-          supabase 
-            ? 'bg-emerald-500/5 border-emerald-500/20' 
-            : 'bg-amber-500/5 border-amber-500/25'
-        }`}>
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative shrink-0">
-              {supabase ? (
-                <>
-                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                  <motion.div 
-                    animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="absolute inset-0 bg-emerald-400 rounded-full"
-                  />
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="w-5 h-5 text-amber-500" />
-                  <motion.div 
-                    animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0, 0.6] }}
-                    transition={{ duration: 2.5, repeat: Infinity }}
-                    className="absolute inset-0 bg-amber-500 rounded-full"
-                  />
-                </>
-              )}
-            </div>
-            <span className={`text-[10px] md:text-xs font-black uppercase tracking-widest line-clamp-1 ${
-              supabase ? 'text-emerald-400/80' : 'text-amber-500/80'
-            }`}>
-              {supabase ? 'Status: Connected to Supabase Cloud' : 'Status: Local Satellite Offline Mode'}
-            </span>
-          </div>
-          
-          <div className="flex flex-wrap items-center justify-center md:justify-end gap-3 md:gap-6 w-full md:w-auto">
-             <div className="flex items-center gap-2">
-                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">NODE_ID</span>
-                <span className="text-[10px] md:text-xs font-mono text-zinc-300">ARENA_77</span>
-             </div>
-             <div className="hidden md:block h-4 w-px bg-zinc-800" />
-             <div className="flex items-center gap-2">
-                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">LATENCY</span>
-                <span className="text-[10px] md:text-xs font-mono text-emerald-400 font-bold">24ms</span>
-             </div>
-             <div className="hidden md:block h-4 w-px bg-zinc-800" />
-             
-             {/* Dynamic Supabase State Indicator */}
-             <button 
-               onClick={() => {
-                 if (!supabase) {
-                   toast.info("Supabase Offline Guide", {
-                     description: "To connect cloud database, open Netlify settings -> Environment Variables, and set:\n1. VITE_SUPABASE_URL\n2. VITE_SUPABASE_ANON_KEY",
-                     duration: 7000
-                   });
-                 } else {
-                   toast.success("Database Status: Online", {
-                     description: "Successfully linked to Supabase global schema 'global_questions_vault'.",
-                     duration: 4000
-                   });
-                 }
-               }}
-               className="flex items-center gap-2 px-2 py-0.5 rounded hover:bg-zinc-800/50 transition-colors"
-               title={supabase ? "Supabase Connected" : "Click to view Netlify configuration guide"}
-             >
-                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">CLOUD_DB</span>
-                <span className={`text-[10px] md:text-xs font-mono font-black ${
-                  supabase ? 'text-emerald-400 animate-pulse' : 'text-amber-500 hover:underline'
-                }`}>
-                  {supabase ? 'ONLINE' : 'OFFLINE'}
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase text-cyan-400 tracking-widest bg-cyan-950/40 border border-cyan-500/20 px-2 py-0.5 rounded-md">
+                  {examType} ACTIVE BLOCK
                 </span>
-             </button>
-             <div className="hidden md:block h-4 w-px bg-zinc-800" />
-
-             <div className="flex items-center gap-2">
-                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">GLOBAL_VAULT</span>
-                <span className={`text-[10px] md:text-xs font-mono font-bold ${supabase ? 'text-cyan-400' : 'text-zinc-500'}`}>
-                  {supabase ? (globalVaultCount ?? '...') : `${vaultSize} (Local)`}
-                </span>
-             </div>
-             <div className="hidden md:block h-4 w-px bg-zinc-800" />
-             <button 
-               onClick={() => setShowLogs(!showLogs)}
-               className="flex items-center gap-2 hover:bg-zinc-800 px-2 py-0.5 rounded transition-colors"
-             >
-                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">CLOUD_LOGS</span>
-                <Terminal className={`w-3 h-3 ${showLogs ? 'text-emerald-500' : 'text-zinc-500'}`} />
-             </button>
-          </div>
-        </div>
-
-        <AnimatePresence>
-          {showLogs && (
-            <motion.div 
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="px-6 pb-4 overflow-hidden"
-            >
-              <div className="bg-black/50 border border-zinc-800 rounded-lg p-3 font-mono text-[10px]">
-                 <div className="flex justify-between items-center mb-2 border-b border-zinc-800 pb-1">
-                    <div className="flex items-center gap-4">
-                       <span className="text-zinc-500 font-bold">BRIDGE_DIAGNOSTICS</span>
-                       <button 
-                         onClick={() => fetchNewQuestion(true, 'physics')}
-                         className="px-2 py-0.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded text-[8px] font-black tracking-tighter transition-all"
-                       >
-                          FORCE_PHYSICS_DIAGRAM
-                       </button>
-                       <button 
-                         onClick={showDemoImage}
-                         className="px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded text-[8px] font-black tracking-tighter transition-all"
-                       >
-                          SHOW_IMAGE_DEMO
-                       </button>
-                    </div>
-                    <button onClick={() => setShowLogs(false)} className="text-zinc-600 hover:text-white">CLOSE</button>
-                 </div>
-                 <div className="max-h-40 overflow-y-auto custom-scrollbar flex flex-col gap-1">
-                    {debugLogs.length === 0 && <div className="text-zinc-700 italic">No logs yet...</div>}
-                    {debugLogs.map((log, i) => (
-                      <div key={i} className="flex gap-2 leading-relaxed">
-                        <span className="text-zinc-700 shrink-0">{log.timestamp}</span>
-                        <span className={`shrink-0 font-bold ${
-                          log.level === 'error' ? 'text-red-500' : 
-                          log.level === 'warn' ? 'text-orange-500' : 
-                          'text-cyan-500'
-                        }`}>[{log.level.toUpperCase()}]</span>
-                        <span className="text-zinc-300 break-all">{log.message}</span>
-                        {log.details && (
-                          <span className="text-zinc-600 italic">
-                            ({JSON.stringify(log.details)})
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                 </div>
+                {supabase && (
+                  <span className="flex items-center gap-1.5 text-[9px] font-black uppercase text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded-md">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" /> Cloud Sync On
+                  </span>
+                )}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              <h1 className="text-lg md:text-xl font-black mt-1 leading-snug">Unified Mock Simulation</h1>
+            </div>
+          </div>
 
-        {/* --- MAIN CONTENT AREA --- */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <div className="flex items-center gap-4 shrink-0 justify-between md:justify-end">
+            <div className={`px-4 py-3 rounded-2xl border flex items-center gap-3 ${
+              isSubmitted 
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                : timeLeft < 300 
+                  ? 'bg-rose-500/10 border-rose-500/25 text-rose-400 font-bold animate-pulse' 
+                  : 'bg-zinc-950 border-white/5 text-cyan-400 font-mono'
+            }`}>
+              <Clock className="w-4 h-4" />
+              <div className="text-sm font-black tracking-widest">
+                {isSubmitted ? 'SUBMITTED' : formatTimer(timeLeft)}
+              </div>
+            </div>
+
+            {!isSubmitted && (
+              <Button 
+                onClick={() => {
+                  submitSession().then(() => {
+                    setShowResultsModal(true);
+                  });
+                }}
+                className="bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl py-6 px-6 text-xs uppercase tracking-wider"
+              >
+                End Exam & Submit
+              </Button>
+            )}
+          </div>
+        </header>
+
+        {/* NESTED SUBJECT NAVIGATION TABS */}
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {subjects.map((sub, idx) => {
+            const isSelected = idx === activeSubjectIndex;
+            const answered = getAnsweredCountForSubject(sub);
+            const total = sub.questions.length;
+            
+            return (
+              <button
+                key={sub.subject}
+                onClick={() => setActiveSubjectIndex(idx)}
+                className={`p-4 rounded-2xl border text-left transition-all ${
+                  isSelected 
+                    ? 'bg-zinc-900 border-cyan-500 shadow-md shadow-cyan-500/5' 
+                    : 'bg-zinc-900/40 border-white/5 opacity-70 hover:opacity-100'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase tracking-wider block truncate max-w-[120px]">
+                    {sub.subject}
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-zinc-500">
+                    {answered}/{total}
+                  </span>
+                </div>
+                <div className="w-full bg-zinc-950 h-1.5 rounded-full mt-3 overflow-hidden border border-white/5">
+                  <div 
+                    className={`h-full transition-all ${isSelected ? 'bg-cyan-500' : 'bg-zinc-600'}`}
+                    style={{ width: `${(answered / (total || 1)) * 100}%` }}
+                  />
+                </div>
+              </button>
+            );
+          })}
+        </section>
+
+        {/* MAIN MOCK CONTENT CONTAINER */}
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
-          <div className="lg:col-span-12 space-y-6">
-            {/* Header / Selection */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-               <div className="text-center md:text-left">
-                  <h1 className="text-3xl md:text-5xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-zinc-500">
-                    LIVE_NEURAL_HUB
-                  </h1>
-                  <p className="text-zinc-500 text-xs md:text-sm font-medium mt-1 uppercase tracking-widest">Deep Learning Exam Simulation</p>
-               </div>
-               
-               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-zinc-900/50 p-2 rounded-2xl border border-white/5 w-full md:w-auto">
-                  <select 
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="bg-zinc-800/50 md:bg-transparent text-[10px] md:text-xs font-black uppercase p-3 md:p-2 rounded-xl focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors text-center md:text-left"
+          <div className="lg:col-span-8 space-y-6">
+            <div className="bg-zinc-900/40 border border-white/5 rounded-3xl p-6 md:p-8 space-y-8 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 blur-3xl rounded-full" />
+              
+              {/* Question HUD indicators */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+                <span className="text-xs font-black uppercase text-cyan-400 tracking-wider">
+                  Question {currentIndex + 1} of {activeSubject.questions.length}
+                </span>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {activeSubject.questions.map((q, idx) => {
+                    const isCurrent = idx === currentIndex;
+                    const ans = userAnswers[String(q.id)];
+                    const isAns = ans !== undefined;
+                    
+                    let bubbleColor = 'bg-zinc-950 border-white/5 text-zinc-500';
+                    if (isCurrent) {
+                      bubbleColor = 'bg-cyan-500/20 border-cyan-500 text-cyan-400 font-bold';
+                    } else if (isAns) {
+                      bubbleColor = 'bg-zinc-800 border-zinc-700 text-zinc-300';
+                    }
+
+                    if (isSubmitted) {
+                      const isCorrect = ans?.toLowerCase() === (q.answer || '').toLowerCase();
+                      if (isAns) {
+                        bubbleColor = isCorrect 
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' 
+                          : 'bg-rose-500/20 border-rose-500 text-rose-400';
+                      }
+                    }
+
+                    return (
+                      <button
+                        key={q.id}
+                        onClick={() => setCurrentIndex(activeSubjectIndex, idx)}
+                        className={`w-7 h-7 rounded-lg border text-[11px] font-mono flex items-center justify-center transition-all ${bubbleColor}`}
+                      >
+                        {idx + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Comprehension / passage attached */}
+              {currentQuestion.passage && (
+                <div className="p-4 bg-zinc-950/80 border border-white/5 rounded-2xl text-xs leading-relaxed text-zinc-300 max-h-[220px] overflow-y-auto">
+                  <span className="font-black text-[9px] uppercase tracking-widest text-cyan-400 block mb-2">Attached Comprehension Passage</span>
+                  <div dangerouslySetInnerHTML={{ __html: currentQuestion.passage }} />
+                </div>
+              )}
+
+              {/* Visual image */}
+              {currentQuestion.image && (
+                <div className="flex justify-center bg-white p-4 rounded-2xl border border-white/10 max-h-48 overflow-hidden">
+                  <img 
+                    src={currentQuestion.image.startsWith('http') ? currentQuestion.image : `https://questions.aloc.com.ng/storage/${currentQuestion.image}`} 
+                    alt="CBT Diagram" 
+                    className="max-h-40 object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              )}
+
+              {/* Question content */}
+              <div 
+                className="text-base md:text-xl font-bold tracking-tight text-white leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: currentQuestion.question }}
+              />
+
+              {/* Options Selector with active Mode Masking */}
+              <div className="grid grid-cols-1 gap-3">
+                {currentQuestion.option && Object.entries(currentQuestion.option)
+                  .filter(([_, value]) => value && value.trim() !== '')
+                  .map(([key, value]) => {
+                    const isSelected = currentAnswer === key;
+                    const isCorrect = (currentQuestion.answer || '').toLowerCase() === key.toLowerCase();
+                    
+                    let buttonStyle = 'bg-zinc-950/40 border-white/5 text-zinc-400 hover:bg-zinc-800 hover:border-white/10';
+                    let badgeStyle = 'bg-zinc-900 border-white/10 text-zinc-500';
+
+                    if (!isSubmitted) {
+                      // Under assessment: only zinc border highlighting for chosen attempts (Exam Masking)
+                      if (isSelected) {
+                        buttonStyle = 'bg-cyan-950/20 border-cyan-500 text-cyan-300 shadow-md shadow-cyan-500/5';
+                        badgeStyle = 'bg-cyan-500/20 border-cyan-500 text-cyan-400 font-bold';
+                      }
+                    } else {
+                      // Post-Submission: correctness clearly visible
+                      if (isCorrect) {
+                        buttonStyle = 'bg-emerald-500/20 border-emerald-500 text-emerald-300';
+                        badgeStyle = 'bg-emerald-500/20 border-emerald-500 text-emerald-400 font-black';
+                      } else if (isSelected && !isCorrect) {
+                        buttonStyle = 'bg-rose-500/20 border-rose-500 text-rose-300';
+                        badgeStyle = 'bg-rose-500/20 border-rose-500 text-rose-400 font-black';
+                      } else {
+                        buttonStyle = 'bg-zinc-950/20 border-white/5 text-zinc-600 opacity-40';
+                      }
+                    }
+
+                    return (
+                      <button
+                        key={key}
+                        disabled={isSubmitted}
+                        onClick={() => handleOptionSelect(key)}
+                        className={`p-4 rounded-2xl border text-left flex items-start justify-between gap-4 transition-all ${buttonStyle}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={`w-7 h-7 rounded-lg border flex items-center justify-center text-xs ${badgeStyle}`}>
+                            {key.toUpperCase()}
+                          </span>
+                          <span className="text-sm font-medium pr-4">{value}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+
+              {/* Navigate & review tools */}
+              <div className="flex items-center justify-between pt-6 border-t border-white/5">
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    disabled={currentIndex === 0}
+                    onClick={handlePrevQuestion}
+                    className="p-3 bg-zinc-950/50 border border-white/5 rounded-xl disabled:opacity-30 text-xs font-bold"
                   >
-                    <option value="english">English</option>
-                    <option value="mathematics">Mathematics</option>
-                    <option value="physics">Physics</option>
-                    <option value="chemistry">Chemistry</option>
-                    <option value="biology">Biology</option>
-                    <option value="economics">Economics</option>
-                    <option value="government">Government</option>
-                    <option value="civiledu">Civic Education</option>
-                    <option value="commerce">Commerce</option>
-                    <option value="accounting">Accounting</option>
-                    <option value="currentaffairs">Current Affairs</option>
-                  </select>
-                  <div className="hidden sm:block w-px h-4 bg-zinc-800 self-center" />
-                  <select 
-                    value={examType}
-                    onChange={(e) => setExamType(e.target.value)}
-                    className="bg-zinc-800/50 md:bg-transparent text-[10px] md:text-xs font-black uppercase p-3 md:p-2 rounded-xl focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors text-center md:text-left"
+                    Previous
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={currentIndex === activeSubject.questions.length - 1}
+                    onClick={handleNextQuestion}
+                    className="p-3 bg-zinc-950/50 border border-white/5 rounded-xl disabled:opacity-30 text-xs font-bold"
                   >
-                    <option value="utme">JAMB (UTME)</option>
-                    <option value="waec">WAEC</option>
-                    <option value="neco">NECO</option>
-                    <option value="post-utme">Post-UTME</option>
-                  </select>
-                  <div className="hidden sm:block w-px h-4 bg-zinc-800 self-center" />
-                  <select 
-                    value={year}
-                    onChange={(e) => setYear(e.target.value)}
-                    className="bg-zinc-800/50 md:bg-transparent text-[10px] md:text-xs font-black uppercase p-3 md:p-2 rounded-xl focus:outline-none cursor-pointer hover:text-emerald-400 transition-colors text-center md:text-left"
+                    Next
+                  </Button>
+                </div>
+
+                {isSubmitted && (
+                  <Button
+                    onClick={queryTutorChuks}
+                    className="bg-cyan-600 hover:bg-cyan-500 font-black text-xs uppercase px-4 rounded-xl flex items-center gap-1.5"
                   >
-                    <option value="">All Years</option>
-                    {Array.from({ length: 30 }, (_, i) => 2024 - i).map(y => (
-                      <option key={y} value={y.toString()}>{y}</option>
-                    ))}
-                  </select>
-               </div>
+                    <BrainCircuit className="w-3.5 h-3.5" /> Explain Solution
+                  </Button>
+                )}
+              </div>
             </div>
 
-            {/* --- STEP 3: QUESTION CARD (GLASSMORPHISM) --- */}
-            <div className="relative group">
-               <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-3xl blur opacity-10 group-hover:opacity-20 transition duration-1000" />
-               <div className="relative bg-zinc-900/40 backdrop-blur-3xl border border-white/10 rounded-2xl md:rounded-3xl p-4 md:p-8 min-h-[300px] flex flex-col justify-between">
-                  {loading ? (
-                    <div className="flex-1 flex items-center justify-center">
-                      <RefreshCw className="w-12 h-12 text-zinc-700 animate-spin" />
-                    </div>
-                  ) : (examMode && isSubmitted) ? (
-                    isAnalyzing ? (
-                        <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
-                            <RefreshCw className="w-12 h-12 text-emerald-500 animate-spin" />
-                            <p className="text-zinc-400">AI Tutor Analysis in progress...</p>
-                        </div>
-                    ) : (
-                        <div className="flex-1 flex flex-col items-start justify-start p-8 overflow-y-auto custom-scrollbar w-full">
-                            <h2 className="text-3xl font-black text-emerald-400 mb-8 self-center">EXAM RESULTS</h2>
-                            <div className="text-6xl font-black mb-8 self-center">
-                                {questionQueue.reduce((score, q) => (
-                                    q && q.answer && userAnswers[q.id] && userAnswers[q.id].toLowerCase() === q.answer.toLowerCase() ? score + 1 : score
-                                ), 0)} <span className="text-zinc-600 text-3xl">/ {questionQueue.length}</span>
-                            </div>
-                            {analysisResult?.map((a, i) => (
-                                <div key={i} className="mb-6 p-4 bg-zinc-800 rounded-lg w-full border border-white/5">
-                                    <div className="font-bold text-white mb-2 flex justify-between items-center">
-                                        Q{i+1}: {a.isCorrect ? <span className="text-emerald-400 uppercase">Correct</span> : <span className="text-rose-400 uppercase">Incorrect</span>}
-                                    </div>
-                                    <p className="text-zinc-300 text-sm mb-2">{a.explanation}</p>
-                                    <div className="text-cyan-400 text-xs mt-2 p-2 bg-black/30 rounded border border-cyan-900/30">
-                                        <strong>Concept:</strong> {a.conceptNote}
-                                    </div>
-                                </div>
-                            ))}
-                            <button 
-                                onClick={() => { setIsSubmitted(false); setExamMode(false); setTimeLeft(1800); setAnalysisResult(null); }}
-                                className="bg-white text-black px-8 py-4 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 mt-8 self-center"
-                            >
-                                Return to Arena
-                            </button>
-                        </div>
-                    )
-                  ) : currentQuestion ? (
-                    <motion.div 
-                      key={currentQuestion.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="space-y-8"
-                    >
-                      <div className="space-y-6">
-                        <div className="flex items-center gap-2">
-                           <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest border border-emerald-500/20">
-                             {currentQuestion.examType} {currentQuestion.examyear}
-                           </span>
-                           <span className={`text-[10px] font-black px-2 py-1 rounded uppercase tracking-widest border ${currentQuestion.source === 'vault' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
-                             {currentQuestion.source === 'vault' ? 'GLOBAL VAULT' : 'LIVE SATELLITE (ALOC)'}
-                           </span>
-                           <span className="text-zinc-600 font-mono text-[10px]">ID: {currentQuestion.id}</span>
-                        </div>
-
-                        {currentQuestion.section && (
-                          <div 
-                            className="p-4 bg-zinc-800/30 border-l-2 border-emerald-500 text-sm italic text-zinc-400 leading-relaxed rounded-r-xl"
-                            dangerouslySetInnerHTML={{ __html: currentQuestion.section }}
-                          />
-                        )}
-
-                        {currentQuestion.passage && (
-                          <div className="p-6 bg-black/40 border border-white/5 rounded-2xl text-sm leading-relaxed text-zinc-300 max-h-[300px] overflow-y-auto custom-scrollbar">
-                            <p className="font-black text-[10px] uppercase tracking-widest text-emerald-500/60 mb-2">Reading Passage</p>
-                            <div dangerouslySetInnerHTML={{ __html: currentQuestion.passage }} />
-                          </div>
-                        )}
-
-                        {currentQuestion.image && !imageError && (
-                          <div className="relative group/img overflow-hidden rounded-2xl bg-white border border-white/10 shadow-xl">
-                            {imageLoading && (
-                              <div className="absolute inset-0 bg-zinc-100 animate-pulse flex items-center justify-center">
-                                <Cpu className="w-8 h-8 text-zinc-300 animate-spin" />
-                              </div>
-                            )}
-                            <div className="p-4 flex justify-center bg-white">
-                              <img 
-                                src={getImageUrl()} 
-                                alt="Exam Diagram" 
-                                onLoad={() => setImageLoading(false)}
-                                onError={handleImageError}
-                                className={`max-h-64 object-contain transition-opacity duration-500 rounded-sm ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
-                              />
-                            </div>
-                            {!imageLoading && (
-                              <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-md rounded text-[8px] font-bold text-zinc-300 uppercase tracking-widest opacity-0 group-hover/img:opacity-100 transition-opacity">
-                                NEURAL_DIAGRAM_ATTACHED
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="flex flex-col gap-1">
-                          <h2 
-                            className="text-2xl md:text-3xl font-bold leading-tight tracking-tight mt-2"
-                            dangerouslySetInnerHTML={{ __html: currentQuestion.question }}
-                          />
-                          
-                          {/* Visual Debugger */}
-                          <div className="mt-4 p-2 bg-red-500/5 border border-red-500/10 rounded-lg">
-                             <div className="flex items-center gap-2 text-[10px] font-mono text-red-400">
-                                <span className="font-bold">DEBUG:</span>
-                                <span>{currentQuestion.image ? `Image Data = "${currentQuestion.image}"` : "No image in this question data."}</span>
-                                {imageError && <span className="text-red-600 font-black ml-2 underline">!! RENDERING_FAILED !!</span>}
-                             </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {currentQuestion.option && Object.entries(currentQuestion.option)
-                          .filter(([_, value]) => value && value.trim() !== "")
-                          .map(([key, value]) => {
-                          const isThisSelected = selectedOption === key;
-                          const isThisCorrect = (currentQuestion.answer || '').toLowerCase() === key.toLowerCase();
-                          
-                          let borderClass = "border-white/10";
-                          let bgClass = "bg-white/5";
-                          let dotClass = "bg-zinc-800 text-zinc-500";
-
-                          if (selectedOption) {
-                            if (isThisCorrect) {
-                              borderClass = "border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]";
-                              bgClass = "bg-emerald-500/10";
-                              dotClass = "bg-emerald-500 text-white";
-                            } else if (isThisSelected && !isThisCorrect) {
-                              borderClass = "border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]";
-                              bgClass = "bg-red-500/10";
-                              dotClass = "bg-red-500 text-white";
-                            }
-                          }
-
-                          return (
-                            <button 
-                              key={key}
-                              onClick={() => handleOptionSelect(key)}
-                              disabled={!!selectedOption}
-                              className={`text-left border ${borderClass} ${bgClass} p-4 rounded-2xl transition-all group flex items-start gap-4 disabled:cursor-default`}
-                            >
-                              <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black uppercase border border-transparent transition-colors ${dotClass}`}>
-                                {key}
-                              </span>
-                              <span className={`${selectedOption ? (isThisCorrect ? 'text-emerald-400' : isThisSelected ? 'text-red-400' : 'text-zinc-500') : 'text-zinc-300'} pt-1`}>
-                                {value}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-4 text-zinc-600">
-                      <AlertCircle className="w-10 h-10" />
-                      <p className="font-bold uppercase tracking-widest text-sm">No node connection</p>
-                    </div>
-                  )}
-
-                  <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 md:mt-12 pt-8 border-t border-white/5">
-                    {examMode && !isSubmitted ? (
-                        <button 
-                            onClick={() => setIsSubmitted(true)}
-                            className="w-full bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black uppercase tracking-tighter hover:bg-emerald-500"
-                        >
-                            Submit Exam
-                        </button>
-                    ) : (
-                        <>
-                            <button 
-                              onClick={() => fetchNewQuestion(false)}
-                              disabled={loading}
-                              className="w-full sm:w-auto flex items-center justify-center gap-3 bg-white text-black px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 transition-colors disabled:opacity-50"
-                            >
-                              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                              <span className="text-xs md:text-sm">
-                                {currentIndex < questionQueue.length - 1 ? `Next (${currentIndex + 2}/${questionQueue.length})` : 'Shuffle Node'}
-                              </span>
-                            </button>
-
-                            <button 
-                              onClick={() => setAutoPreview(!autoPreview)}
-                              className={`w-full sm:w-auto flex items-center justify-center gap-3 px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter transition-all ${autoPreview ? 'bg-orange-500 text-white shadow-[0_0_20px_rgba(249,115,22,0.3)]' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
-                            >
-                              <Zap className={`w-5 h-5 ${autoPreview ? 'animate-pulse' : ''}`} />
-                              <span className="text-xs md:text-sm">{autoPreview ? 'STOP AUTO' : 'AUTO PREVIEW'}</span>
-                            </button>
-
-                            {/* --- STEP 3: THE AI BUTTON --- */}
-                            <button 
-                              onClick={() => runNeuralAnalysis()}
-                              className="w-full sm:w-auto flex items-center justify-center gap-3 bg-emerald-500 text-white px-6 py-4 md:py-3 rounded-2xl font-black uppercase tracking-tighter hover:bg-emerald-400 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)]"
-                            >
-                              <BrainCircuit className="w-5 h-5" />
-                              <span className="text-xs md:text-sm">Neural Analysis</span>
-                            </button>
-                        </>
-                    )}
-                  </div>
-               </div>
-            </div>
+            {/* Explanations shown immediately after submission */}
+            {isSubmitted && currentQuestion.explanation && (
+              <motion.div 
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-zinc-900/40 border border-emerald-500/10 p-6 rounded-3xl"
+              >
+                <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-xs uppercase mb-3">
+                  <HelpCircle className="w-4 h-4 text-emerald-400" /> Syllabus Reference Solution
+                </div>
+                <p className="text-zinc-300 text-xs leading-relaxed whitespace-pre-line">
+                  {currentQuestion.explanation}
+                </p>
+              </motion.div>
+            )}
           </div>
-        </div>
 
-        {/* --- STEP 4: DEVELOPER CONSOLE (DEMO MODE) --- */}
-        <div className="bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden mt-12">
-          <div className="bg-zinc-900 px-6 py-2 flex items-center justify-between border-b border-zinc-800">
-            <div className="flex items-center gap-2">
-               <Terminal className="w-4 h-4 text-zinc-500" />
-               <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Developer Console</span>
-            </div>
-            <div className="flex items-center gap-4">
-               <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                  <span className="text-[10px] text-zinc-600 font-mono">LIVE_FEED</span>
-               </div>
-               {currentQuestion && (
-                 <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-zinc-600 font-mono">SOURCE:</span>
-                    <span className={`text-[10px] font-mono ${currentQuestion.source === 'vault' ? 'text-cyan-400' : 'text-emerald-500'}`}>
-                      {currentQuestion.source?.toUpperCase() || 'LIVE'}
+          {/* AI TUTOR PANEL - ASSESSMENT MASKING SUPPORT */}
+          <div className="lg:col-span-4 space-y-6">
+            {!isSubmitted ? (
+              <div className="bg-zinc-900 border border-dashed border-white/5 rounded-3xl p-6 text-center space-y-4">
+                <Lock className="w-8 h-8 text-cyan-500/40 mx-auto animate-pulse" />
+                <h3 className="font-extrabold text-sm uppercase text-zinc-300">Tutor Link Encrypted</h3>
+                <p className="text-xs text-zinc-500 leading-normal">
+                  Assessment Mode is active. Complete and submit your unified mock script to engage Tutor Chuks diagnostics.
+                </p>
+                
+                <div className="bg-zinc-950 rounded-2xl p-4 border border-white/5 text-left text-xs font-mono space-y-2">
+                  <div className="text-[10px] text-zinc-400 uppercase font-black">Performance Diagnostics</div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Unanswered count:</span>
+                    <span className="text-cyan-400 font-bold">
+                      {totalSessionQuestions - Object.keys(userAnswers).length}
                     </span>
-                 </div>
-               )}
-            </div>
-          </div>
-          <div className="p-6 font-mono grid grid-cols-1 md:grid-cols-2 gap-6 h-[300px] overflow-y-auto custom-scrollbar">
-             <div className="space-y-4">
-                <span className="text-zinc-600 text-xs font-bold uppercase tracking-widest">{'//'} Raw_API_Response</span>
-                <div className="bg-black/50 p-4 rounded-xl border border-white/5 text-[10px] text-emerald-500/80 break-all overflow-auto max-h-[200px]">
-                   {currentQuestion ? JSON.stringify(currentQuestion, null, 2) : "Awaiting data stream..."}
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Assigned Timer:</span>
+                    <span className="text-cyan-400 font-bold">{formatTimer(timeLeft)}</span>
+                  </div>
                 </div>
-             </div>
-             <div className="space-y-4">
-                <span className="text-zinc-600 text-xs font-bold uppercase tracking-widest">{'//'} Active_Neural_Nodes</span>
-                <div className="space-y-2">
-                   <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
-                      <div className="flex items-center gap-3">
-                         <div className={`w-2 h-2 rounded-full ${aiResponse?.provider === 'gemini' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-zinc-800'}`} />
-                         <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400">Gemini-Pro-Vision</span>
-                      </div>
-                      <span className="text-[9px] font-mono text-zinc-600">MASTER</span>
-                   </div>
-                   <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
-                      <div className="flex items-center gap-3">
-                         <div className={`w-2 h-2 rounded-full ${aiResponse?.provider === 'groq' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-zinc-800'}`} />
-                         <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400">Groq-Llama-3</span>
-                      </div>
-                      <span className="text-[9px] font-mono text-zinc-600">FAILOVER_01</span>
-                   </div>
-                   <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
-                      <div className="flex items-center gap-3">
-                         <div className={`w-2 h-2 rounded-full ${aiResponse?.provider === 'huggingface' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-zinc-800'}`} />
-                         <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400">HF-Inference</span>
-                      </div>
-                      <span className="text-[9px] font-mono text-zinc-600">FAILOVER_02</span>
-                   </div>
+              </div>
+            ) : (
+              <div className="bg-zinc-900 border border-white/5 rounded-3xl p-6 space-y-6">
+                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <BrainCircuit className="w-5 h-5 text-cyan-400 animate-pulse" />
+                    <h3 className="font-black text-sm uppercase">Tutor Chuks Diagnostic</h3>
+                  </div>
+                  
+                  <button 
+                    onClick={() => isSpeaking ? voiceService.stop() : voiceService.speak(aiResponse?.answer || "Explanation ready.")}
+                    className="p-2 bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-cyan-400 rounded-xl border border-white/5 transition-colors"
+                  >
+                    {isSpeaking ? <VolumeX className="w-4 h-4 text-orange-400 animate-pulse" /> : <Volume2 className="w-4 h-4" />}
+                  </button>
                 </div>
-             </div>
-          </div>
-        </div>
 
+                {isAiProcessing ? (
+                  <div className="flex flex-col items-center justify-center p-8 space-y-3 text-center">
+                    <div className="w-8 h-8 border-2 border-cyan-500/20 border-t-cyan-400 rounded-full animate-spin" />
+                    <p className="text-xs text-zinc-500 font-black uppercase tracking-widest animate-pulse">Running Neural Inference...</p>
+                  </div>
+                ) : aiResponse ? (
+                  <div className="space-y-4">
+                    <div className="text-xs text-zinc-300 bg-zinc-950 p-4 rounded-2xl border border-white/5 whitespace-pre-line leading-relaxed max-h-[250px] overflow-y-auto">
+                      {aiResponse.answer}
+                    </div>
+                    <div className="text-[9px] font-mono text-zinc-500 text-right">
+                      Processed via {aiResponse.provider} Network
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center p-6 bg-zinc-950/50 rounded-2xl border border-dashed border-white/5 text-zinc-500 text-xs">
+                    Choose a question in reviews and select "Explain Solution" to fire full model diagnostics.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
       </div>
 
-      {/* --- AI SLIDE-OUT PANEL --- */}
+      {/* FINAL EXAMINATION ASSESSMENT OVERLAY */}
       <AnimatePresence>
-        {showAiPanel && (
-          <>
+        {showResultsModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          >
             <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowAiPanel(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-            />
-            <motion.div 
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 h-screen w-full md:w-[450px] bg-[#0c0c0c] border-l border-white/10 z-50 p-8 shadow-[-20px_0_40px_rgba(0,0,0,0.5)] flex flex-col"
+              initial={{ scale: 0.9, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 10 }}
+              className="bg-zinc-900 border border-white/10 max-w-lg w-full rounded-3xl p-6 md:p-8 space-y-6 shadow-2xl relative overflow-hidden"
             >
-              <div className="flex items-center justify-between mb-12">
-                 <div className="flex items-center gap-4">
-                    <div className="p-3 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
-                       <Cpu className="w-6 h-6 text-emerald-400" />
-                    </div>
-                    <div>
-                       <h3 className="font-black text-xl uppercase tracking-tighter">Tutor Chuks</h3>
-                       <p className="text-[10px] font-black uppercase text-emerald-500/60 tracking-widest">Neural Link Active</p>
-                    </div>
-                 </div>
-                 <button 
-                  onClick={() => setShowAiPanel(false)}
-                  className="w-10 h-10 rounded-full hover:bg-white/5 flex items-center justify-center transition-colors border border-white/5"
-                 >
-                   <ChevronRight className="w-5 h-5" />
-                 </button>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl rounded-full" />
+              <div className="absolute bottom-0 left-0 w-32 h-32 bg-cyan-500/5 blur-3xl rounded-full" />
+
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Award className="w-8 h-8" />
+                </div>
+                <h2 className="text-2xl font-black uppercase tracking-tight">CBT Simulation Complete</h2>
+                <p className="text-xs text-zinc-500">Your results have been registered dynamically to the storage sync bridge.</p>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-8 custom-scrollbar pr-2">
-                 <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                       <MessageSquare className="w-4 h-4 text-zinc-600" />
-                       <span className="text-xs font-black uppercase text-zinc-600 tracking-widest">Query Analysis</span>
-                    </div>
-                    <div className="bg-white/5 p-6 rounded-3xl border border-white/10 italic text-zinc-400">
-                       {aiResponse ? `Student input detected. Routing to ${aiResponse.provider.toUpperCase()} nodes...` : "Neural stream initiating..."}
-                    </div>
-                 </div>
+              {/* Assessment diagnostics numbers */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-zinc-950 border border-white/5 p-4 rounded-2xl text-center">
+                  <span className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Unified Score</span>
+                  <span className={`text-3xl font-black block mt-1 ${
+                    currentSession.score >= 70 ? 'text-emerald-400' : currentSession.score >= 50 ? 'text-cyan-400' : 'text-rose-400'
+                  }`}>
+                    {Math.round(currentSession.score)}%
+                  </span>
+                </div>
 
-                 <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                       <div className="flex items-center gap-2">
-                          <Terminal className="w-4 h-4 text-emerald-500" />
-                          <span className="text-xs font-black uppercase text-emerald-500 tracking-widest">Tutor Output</span>
-                       </div>
-                       {aiResponse && (
-                         <div className="flex items-center gap-3">
-                           <AnimatePresence>
-                             {isSpeaking && (
-                               <motion.div 
-                                 initial={{ opacity: 0, scale: 0.8 }}
-                                 animate={{ opacity: 1, scale: 1 }}
-                                 exit={{ opacity: 0, scale: 0.8 }}
-                                 className="flex items-end gap-0.5 h-3"
-                               >
-                                 {[0, 1, 2].map((i) => (
-                                   <motion.div
-                                     key={i}
-                                     animate={{ 
-                                       height: ["20%", "100%", "20%"]
-                                     }}
-                                     transition={{ 
-                                       duration: 0.6, 
-                                       repeat: Infinity, 
-                                       delay: i * 0.1,
-                                       ease: "easeInOut"
-                                     }}
-                                     className="w-0.5 bg-cyan-400 rounded-full"
-                                   />
-                                 ))}
-                               </motion.div>
-                             )}
-                           </AnimatePresence>
-                           <button 
-                             onClick={() => isSpeaking ? voiceService.stop() : voiceService.speak(aiResponse.answer)}
-                             className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-xl border border-emerald-500/20 transition-all group relative overflow-hidden"
-                           >
-                             <div className="absolute inset-0 bg-emerald-400/5 blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
-                             {isSpeaking ? (
-                               <Square className="w-4 h-4 text-emerald-400 fill-emerald-400" />
-                             ) : (
-                               <Volume2 className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
-                             )}
-                           </button>
-                         </div>
-                       )}
-                    </div>
-                    <div className="min-h-[200px] relative">
-                       {isAiProcessing ? (
-                         <div className="space-y-4 pt-4">
-                            <div className="h-4 bg-zinc-800 rounded animate-pulse w-full" />
-                            <div className="h-4 bg-zinc-800 rounded animate-pulse w-5/6" />
-                            <div className="h-4 bg-zinc-800 rounded animate-pulse w-4/6" />
-                         </div>
-                       ) : aiResponse ? (
-                         <div className="text-lg leading-relaxed text-zinc-100 font-medium whitespace-pre-wrap">
-                            {aiResponse.answer}
-                            <div className="mt-8 pt-8 border-t border-white/5 flex items-center justify-between">
-                               <span className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">Processed via {aiResponse.provider} Node</span>
-                               <Zap className="w-3 h-3 text-emerald-500" />
-                            </div>
-                         </div>
-                       ) : null}
-                    </div>
-                 </div>
+                <div className="bg-zinc-950 border border-white/5 p-4 rounded-2xl text-center">
+                  <span className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Reward Earned</span>
+                  <span className="text-3xl font-black text-amber-400 block mt-1">
+                    +{currentSession.xpEarned} XP
+                  </span>
+                </div>
+              </div>
+
+              {/* Breakdown by subject list */}
+              <div className="space-y-3">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Subject Breakdown</span>
+                <div className="space-y-2 max-h-[140px] overflow-y-auto pr-1">
+                  {subjects.map(sub => {
+                    let subCorrect = 0;
+                    sub.questions.forEach(q => {
+                      if (userAnswers[String(q.id)]?.toLowerCase() === (q.answer || '').toLowerCase()) {
+                        subCorrect++;
+                      }
+                    });
+                    const percent = Math.round((subCorrect / (sub.questions.length || 1)) * 100);
+
+                    return (
+                      <div key={sub.subject} className="flex items-center justify-between text-xs bg-zinc-950 px-3 py-2 border border-white/5 rounded-xl">
+                        <span className="uppercase font-medium text-zinc-300">{sub.subject}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-zinc-500 font-mono text-[10px]">{subCorrect} / {sub.questions.length}</span>
+                          <span className={`font-black font-mono ${
+                            percent >= 70 ? 'text-emerald-400' : percent >= 50 ? 'text-cyan-400' : 'text-rose-400'
+                          }`}>{percent}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button 
+                  onClick={() => navigate('/')} 
+                  variant="outline"
+                  className="flex-1 py-4 border-white/10 hover:bg-zinc-800 text-xs text-white uppercase font-black tracking-wider rounded-2xl"
+                >
+                  Return to Dashboard
+                </Button>
+                <Button 
+                  onClick={() => setShowResultsModal(false)}
+                  className="flex-1 py-4 bg-cyan-600 hover:bg-cyan-500 text-white text-xs uppercase font-black tracking-wider rounded-2xl"
+                >
+                  Review Questions
+                </Button>
               </div>
             </motion.div>
-          </>
+          </motion.div>
         )}
       </AnimatePresence>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #18181b;
-          border-radius: 2px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #27272a;
-        }
-      `}} />
-
-      {/* --- Neural Data Stream Overlay --- */}
-      <div className="fixed bottom-8 left-8 z-30 pointer-events-none hidden md:block">
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800 p-3 rounded-xl shadow-2xl"
-        >
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-[10px] font-black tracking-widest text-emerald-500/60 uppercase">Neural Data Stream</span>
-          </div>
-          <div className="font-mono text-[9px] text-zinc-400">
-            IMAGE_FIELD: <span className={currentQuestion?.image ? "text-cyan-400" : "text-zinc-600"}>
-              "{currentQuestion?.image || ""}"
-            </span>
-          </div>
-        </motion.div>
-      </div>
     </div>
   );
 }
