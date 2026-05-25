@@ -1,10 +1,11 @@
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { useThemeStore } from '@/src/store/useThemeStore';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Trophy, LogOut, User, Settings, Zap } from 'lucide-react';
+import { BookOpen, Trophy, LogOut, User, Settings, Zap, GraduationCap, Menu } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { Link } from 'react-router-dom';
 
-export default function Navbar() {
+export default function Navbar({ toggleSidebar }: { toggleSidebar: () => void }) {
   const { user, logout } = useAuthStore();
   const { mode, toggleMode } = useThemeStore();
 
@@ -14,6 +15,9 @@ export default function Navbar() {
     }`}>
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={toggleSidebar}>
+            <Menu className={`w-5 h-5 ${mode === 'arena' ? 'text-white' : 'text-slate-600'}`} />
+          </Button>
           <div className={`p-2 rounded-xl ${mode === 'arena' ? 'bg-cyan-500 shadow-[0_0_20px_rgba(34,211,238,0.5)]' : 'bg-blue-600 shadow-lg'} transition-all duration-500`}>
             {mode === 'arena' ? <Zap className="text-black w-5 h-5 animate-pulse" /> : <BookOpen className="text-white w-5 h-5" />}
           </div>
@@ -38,6 +42,11 @@ export default function Navbar() {
                   </div>
                 </div>
               </div>
+              <Link to="/teacher">
+                <Button variant="ghost" size="icon">
+                  <GraduationCap className={`w-5 h-5 ${mode === 'arena' ? 'text-cyan-500' : 'text-slate-600'}`} />
+                </Button>
+              </Link>
               <Button variant="ghost" size="icon" onClick={() => logout()}>
                 <LogOut className={`w-5 h-5 ${mode === 'arena' ? 'text-green-500' : 'text-slate-600'}`} />
               </Button>

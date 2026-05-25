@@ -9,7 +9,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -179,6 +179,11 @@ const initialDb = {
   userProgress: [],
   practiceResults: [],
   battles: [],
+  achievements: [
+    { id: "a1", name: "Quiz Master", description: "Score 100% on 3 consecutive lessons", icon: "🏆" },
+    { id: "a2", name: "Battle Starter", description: "Participate in 5 battles", icon: "⚔️" },
+    { id: "a3", name: "Scholar Supreme", description: "Reach Rank: Gold Scholar", icon: "👑" }
+  ],
   leaderboard: [],
   feed: [
     { id: "f1", user_id: "demo-user", type: "achievement", content: "just won a 5-streak in Physics!", timestamp: new Date().toISOString() },
@@ -646,10 +651,22 @@ Return JSON of this exact shape:
 
       db.practiceResults.push(result);
       
-      // Update user points/coins
+      // Update user points/coins and check for achievements
       const user = db.users.find((u: any) => u.id === decoded.userId);
       if (user) {
         user.points += coins_earned;
+        
+        // Basic Achievement: Quiz Master (if score 100)
+        if (score === 100 && !user.badges.includes("a1")) {
+            user.badges.push("a1");
+            db.feed.push({
+                id: Math.random().toString(36).substr(2, 9),
+                user_id: user.id,
+                type: "achievement",
+                content: `just earned the 'Quiz Master' badge!`,
+                timestamp: new Date().toISOString()
+            });
+        }
       }
 
       saveDb(db);
@@ -657,6 +674,17 @@ Return JSON of this exact shape:
     } catch (e) {
       res.status(401).json({ error: "Invalid token" });
     }
+  });
+
+  app.post("/api/social/share-image", (req, res) => {
+    const { userId, score, rank } = req.body;
+    // Generate dynamically relevant metadata for the OG image
+    const imageUrl = `/images/og-score-${userId}.png?score=${score}&rank=${rank}`;
+    res.json({ 
+        url: imageUrl, 
+        message: `Check out my score of ${score} on EduArena!`,
+        challengeLink: `/arena/challenge/${userId}` 
+    });
   });
 
   app.get("/api/user/progress", (req, res) => {
@@ -990,6 +1018,73 @@ Return JSON of this exact shape:
     res.json({ success: true });
   });
 
+  app.post("/api/ai/tutor", async (req, res) => {
+    const { message } = req.body;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) return res.status(500).json({ error: "AI service unavailable" });
+
+    const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+    
+    // Simple prompt for now, can be improved with syllabus/RAG later
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: `You are an expert tutor for WAEC, JAMB, and NECO exams. Answer this question: ${message}`,
+    });
+
+    res.json({ response: response.text });
+  });
+
+  app.post("/api/ai/notifications/generate", async (req, res) => {
+    const { performanceSummary } = req.body;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) return res.status(500).json({ error: "AI service unavailable" });
+
+    const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+    
+    try {
+      const prompt = `You are a helpful and competitive CBT AI Academic Coach for WAEC, JAMB, and NECO students. 
+      Analyze the user's performance & data profile:
+      ${JSON.stringify(performanceSummary || {})}
+      
+      Generate exactly 4 highly engaging, action-driven, context-specific alerts.
+      Ensure there is:
+      1. One AI Learning analysis alert (type: "ai") focusing on their weakest subject or topic.
+      2. One Exam Mock alert (type: "exam") indicating a simulation or past-paper challenge.
+      3. One Study Planner tracker (type: "study") urging them to follow their custom timetable.
+      4. One Gamification/Leaderboard competitive notification (type: "gamification" or "leaderboard") referencing streaks, leagues, or overtaking a rival.
+
+      Return the list of notifications matching the required schema. Ensure the action_links map properly to UI routes (e.g. "/tutor", "/practice", "/planner", "/leaderboard", "/arena", "/performance").`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                message: { type: Type.STRING },
+                type: { type: Type.STRING }, // 'ai', 'exam', 'study', 'gamification', 'leaderboard', 'system'
+                priority: { type: Type.STRING }, // 'high', 'medium', 'low'
+                action_link: { type: Type.STRING }
+              },
+              required: ["title", "message", "type", "priority", "action_link"]
+            }
+          }
+        }
+      });
+
+      const notifications = JSON.parse(response.text || "[]");
+      res.json({ success: true, notifications });
+    } catch (err: any) {
+      console.error("AI Notifications generation failed", err);
+      res.status(500).json({ error: "Failed to generate AI notifications" });
+    }
+  });
+
   // --- Exam Oracle & AI Mastery Routes ---
   app.get("/api/oracle/questions/by-year", (req, res) => {
     const { exam, year, subject_id, page = "1", limit = "20" } = req.query;
@@ -1010,6 +1105,78 @@ Return JSON of this exact shape:
       limit: l,
       questions: paginated
     });
+  });
+
+  app.post("/api/practice/session/save-result", async (req, res) => {
+    const { sessionId, subject, finalScore, totalQuestions, xpEarned, mistakes } = req.body;
+    const db = getDb();
+    
+    // In a real app, this would perform an 'upsert' or 'insert' in Supabase
+    const resultEntry = {
+      id: Math.random().toString(36).substr(2, 9),
+      sessionId,
+      subject,
+      finalScore,
+      totalQuestions,
+      xpEarned,
+      mistakes,
+      timestamp: new Date().toISOString()
+    };
+    
+    db.practiceResults.push(resultEntry);
+    saveDb(db);
+    
+    res.json({ success: true, resultId: resultEntry.id });
+  });
+
+  // --- Practice Page Routes ---
+  app.post("/api/practice/session/start", async (req, res) => {
+    // In a real app, this would save session to Supabase
+    res.json({ sessionId: `sess-${Date.now()}` });
+  });
+
+  app.post("/api/practice/ai-tutor", async (req, res) => {
+    const { question_text, correct_answer, type, options } = req.body;
+    
+    // 1. Create a hash of the question (simple approach)
+    const crypto = await import('crypto');
+    const questionHash = crypto.createHash('sha256').update(question_text).digest('hex');
+
+    // 2. Check local DB/Cache (Mocking Supabase check)                
+    const db = getDb();
+    const cachedResponse = db.ai_cache?.find((c: any) => c.question_hash === questionHash && c.response_type === type);                
+
+    if (cachedResponse) {
+      return res.json({ response: cachedResponse.response_text, cached: true });
+    }
+
+    // 3. Call AI
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) return res.status(500).json({ error: "AI service unavailable" });
+
+    const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+    
+    let prompt = "";
+    if (type === 'hint') {
+      prompt = `Provide a subtle 1-sentence clue for this question: "${question_text}" without giving the answer.`;
+    } else {
+      prompt = `Provide a 3-step explanation for this question: "${question_text}". Explicitly explain why the other options (Options: ${JSON.stringify(options)}) are wrong. Correct answer: ${correct_answer}.`;
+    }
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+    });
+    
+    const aiText = response.text || "";
+
+    // 4. Save to DB/Cache (TODO: Sync to Supabase)
+    const newCache = { question_hash: questionHash, response_type: type, response_text: aiText };
+    db.ai_cache = db.ai_cache || [];
+    db.ai_cache.push(newCache);
+    saveDb(db);
+
+    res.json({ response: aiText, cached: false });
   });
 
   app.get("/api/oracle/questions/by-topic", (req, res) => {
@@ -1254,7 +1421,50 @@ Return JSON of this exact shape:
     res.json({ message: "Study plan generated" });
   });
 
+  app.get("/api/teacher/class-performance", (req, res) => {
+    // Aggregating mock data for demo
+    const performance = {
+        classAverage: 72,
+        topStudents: [{ name: "Alice", score: 95 }, { name: "Bob", score: 88 }],
+        commonStruggleTopics: ["Photosynthesis", "Geometric Progressions"],
+    };
+    res.json(performance);
+  });
+
+  app.post("/api/teacher/generate-assignment", async (req, res) => {
+    const { topic, difficulty } = req.body;
+    // In real app, call Gemini API with RAG to generate quiz
+    res.json({ assignment: `Quiz generated for ${topic} at ${difficulty} level.` });
+  });
+
+  app.post("/api/teacher/summarize-student", async (req, res) => {
+    const { studentName, progressData } = req.body;
+    // Prompt: 'You are an encouraging teacher assistant. Summarize this student's progress: ${JSON.stringify(progressData)}. Provide actionable advice for further improvement.'
+    res.json({ summary: `Encouraging report for ${studentName}: They are showing great progress in core concepts but need more practice on advanced applications.` });
+  });
+
   // --- Socket.io Logic (Arena) ---
+  io.on('connection', (socket) => {
+    console.log('User connected for Battle:', socket.id);
+
+    socket.on('join_battle', (data) => {
+      const { roomId, userId } = data;
+      socket.join(roomId);
+      console.log(`User ${userId} joined battle room ${roomId}`);
+      io.to(roomId).emit('user_joined', { userId });
+    });
+
+    socket.on('submit_battle_answer', (data) => {
+        const { roomId, userId, answer, isCorrect } = data;
+        // In real app, calculate scores or update database here
+        io.to(roomId).emit('battle_update', { userId, isCorrect, score: isCorrect ? 10 : 0 });
+    });
+
+    socket.on('disconnect', () => {
+      console.log('User disconnected:', socket.id);
+    });
+  });
+
   const activeBattles = new Map();
   const matchmakingQueue = new Map(); // level -> socketId
   const userSocketMap = new Map(); // userId -> socketId
