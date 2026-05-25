@@ -394,7 +394,12 @@ async function startServer() {
       ? headerToken.trim() 
       : 'ALOC-84eb83db941bfc4c524c';
     
-    let url = `https://questions.aloc.com.ng/api/v2/q/${count}?subject=${subject || 'english'}&type=${type || 'utme'}`;
+    // Normalize exam system types expected by ALOC API
+    let examType = String(type || 'utme').toLowerCase().trim();
+    if (examType === 'jamb') examType = 'utme';
+    if (examType === 'waec') examType = 'wassce';
+
+    let url = `https://questions.aloc.com.ng/api/v2/q/${count}?subject=${subject || 'english'}&type=${examType}`;
     if (year && year !== 'all' && year !== '') {
       url += `&year=${year}`;
     }
@@ -433,7 +438,7 @@ async function startServer() {
     if (geminiApiKey && typeof geminiApiKey === 'string' && geminiApiKey.trim().length > 0) {
       try {
         console.log(`Engaging Gemini model to generate a custom practice question for ${chosenSubject}...`);
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+        const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
         const yearPromptStr = chosenYear && chosenYear !== 'all' ? chosenYear : 'random year between 2005 and 2023';
         const prompt = `You are a high-fidelity Nigerian examination past question vault. Generate exactly ONE highly realistic, syllabus-aligned past exam question for the subject: "${chosenSubject}" under the exam system: "${chosenType}" of the year: "${yearPromptStr}".
 
@@ -455,7 +460,7 @@ Return JSON of this exact shape:
 }`;
 
         const genResponse = await ai.models.generateContent({
-          model: "gemini-1.5-flash",
+          model: "gemini-3.5-flash",
           contents: prompt
         });
 
@@ -606,10 +611,15 @@ Return JSON of this exact shape:
       );
     }
     if (subject) {
-      filtered = filtered.filter((q: any) => q.subject === subject);
+      const sLower = String(subject).toLowerCase().trim();
+      filtered = filtered.filter((q: any) => (q.subject || "").toLowerCase().trim() === sLower);
     }
     if (exam_type) {
-      filtered = filtered.filter((q: any) => q.exam_type === exam_type);
+      const eLower = String(exam_type).toLowerCase().trim();
+      filtered = filtered.filter((q: any) => {
+        const qExam = q.exam_type || q.exam_body || "";
+        return qExam.toLowerCase().trim() === eLower;
+      });
     }
 
     res.json(filtered);
@@ -1177,6 +1187,58 @@ Return JSON of this exact shape:
     saveDb(db);
 
     res.json({ response: aiText, cached: false });
+  });
+
+  app.post("/api/practice/ai/explain", async (req, res) => {
+    try {
+      const { question, options, userAnswer, type } = req.body;
+      const db = getDb();
+      
+      const crypto = await import('crypto');
+      const questionHash = crypto.createHash('sha256').update(question || "").digest('hex');
+      const cacheKey = `${questionHash}_explain_${userAnswer || 'status'}`;
+      
+      const cached = db.ai_cache?.find((c: any) => c.question_hash === cacheKey);
+      if (cached) {
+        return res.json({ explanation: cached.response_text, cached: true });
+      }
+
+      const geminiApiKey = process.env.GEMINI_API_KEY;
+      if (!geminiApiKey || typeof geminiApiKey !== 'string' || geminiApiKey.trim().length === 0) {
+        const staticExplanation = `As your AI Copilot, here is the syllabus logic: This is a past exam-standard problem testing the core fundamentals of the topic. The option selected corresponds to a ${userAnswer || 'typical'} response. In school-level/UTME examinations, always verify step-by-step logic, eliminate dimensionally incorrect or unrelated options first, and review the core definitions in the recommended textbooks.`;
+        return res.json({ explanation: staticExplanation, cached: false });
+      }
+
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      const prompt = `You are an expert academic tutor for examinations in West Africa (JAMB UTME, WAEC, NECO).
+The user just answered a past-exam question. The user's status for this answer is: "${userAnswer}".
+Question: "${question}"
+Options: ${JSON.stringify(options)}
+
+Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sentences max) analyzing why the correct option is chemically/biologically/mathematically correct and why the alternatives are incorrect. Focus on standard curriculum topics. Use clear, encouraging, and highly academic display language.`;
+
+      let textContent = "";
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: prompt,
+        });
+        textContent = response.text || "";
+      } catch (gem_err: any) {
+        console.error("Gemini explanation generation failed, falling back to static prompt explanation:", gem_err);
+        textContent = `Analyzing syllabus logic: The option corresponds to a ${userAnswer || 'typical'} path. According to standard JAMB/WAEC guidelines, focus on reducing calculation errors, eliminating distractor options, and reviewing core concepts.`;
+      }
+
+      const newCache = { question_hash: cacheKey, response_type: 'analysis', response_text: textContent };
+      db.ai_cache = db.ai_cache || [];
+      db.ai_cache.push(newCache);
+      saveDb(db);
+
+      res.json({ explanation: textContent, cached: false });
+    } catch (err) {
+      console.error("Critical explain route exception:", err);
+      res.status(500).json({ error: "Explanation pipeline failed" });
+    }
   });
 
   app.get("/api/oracle/questions/by-topic", (req, res) => {
