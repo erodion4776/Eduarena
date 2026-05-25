@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import Navbar from './Navbar';
 import { 
@@ -30,38 +30,69 @@ const menuItems = [
 ];
 
 export default function SidebarLayout({ children }: { children: React.ReactNode }) {
-  const [isOpen, setIsOpen] = React.useState(true);
+  const [isOpen, setIsOpen] = React.useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+      setIsOpen(true);
+    }
+  }, []);
+
   return (
-    <div className="flex h-screen bg-zinc-950">
+    <div className="flex h-screen bg-zinc-950 text-white overflow-hidden relative">
+      {/* Mobile Backdrop Overlay */}
+      {isOpen && (
+        <div 
+          onClick={() => setIsOpen(false)} 
+          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm lg:hidden transition-all duration-300"
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className={`border-r border-white/10 flex flex-col p-4 bg-zinc-900/50 backdrop-blur-xl transition-all duration-300 ${isOpen ? 'w-64' : 'w-20'}`}>
-        <div className="text-white font-black text-xl mb-8 tracking-tighter px-2 flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600" />
-          {isOpen && "EDUARENA"}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 flex flex-col p-4 bg-zinc-900 border-r border-white/10 transition-all duration-300
+        lg:static lg:translate-x-0
+        ${isOpen 
+          ? 'w-64 translate-x-0' 
+          : 'w-0 -translate-x-full lg:w-20 lg:translate-x-0'
+        }
+      `}>
+        <div className="text-white font-black text-xl mb-6 tracking-tighter px-2 flex items-center gap-2 shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 shrink-0" />
+          {isOpen && <span className="animate-fade-in">EDUARENA</span>}
         </div>
-        <nav className="flex flex-col gap-1">
+
+        <nav className="flex flex-col gap-1 overflow-y-auto flex-1 no-scrollbar">
           {menuItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
+              onClick={() => {
+                if (window.innerWidth < 1024) {
+                  setIsOpen(false);
+                }
+              }}
               className={({ isActive }) => 
-                `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
+                `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-250 shrink-0 ${
                   isActive 
-                    ? 'bg-white/10 text-white shadow-lg' 
-                    : 'text-zinc-400 hover:bg-white/5 hover:text-white'
+                    ? 'bg-white/10 text-white shadow-lg border border-white/5' 
+                    : 'text-zinc-400 hover:bg-white/5 hover:text-white border border-transparent'
                 }`
               }
             >
-              <item.icon className="w-5 h-5" />
-              {isOpen && item.name}
+              <item.icon className="w-5 h-5 shrink-0" />
+              {isOpen && <span className="whitespace-nowrap">{item.name}</span>}
             </NavLink>
           ))}
         </nav>
       </aside>
+
       {/* Content */}
-      <main className="flex-1 overflow-y-auto bg-zinc-950 flex flex-col">
+      <main className="flex-1 overflow-y-auto bg-zinc-950 flex flex-col min-w-0">
         <Navbar toggleSidebar={() => setIsOpen(!isOpen)} />
-        {children}
+        <div className="flex-1 overflow-y-auto">
+          {children}
+        </div>
       </main>
     </div>
   );
