@@ -5,6 +5,7 @@
 
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from '@/src/pages/Dashboard';
+import TrendsBoard from '@/src/pages/TrendsBoard';
 import AdminPage from '@/src/pages/Admin';
 import AdminArena from '@/src/pages/AdminArena';
 import AlocHarvester from '@/src/pages/AlocHarvester';
@@ -16,6 +17,7 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/trends" element={<TrendsBoard />} />
         <Route path="/arena" element={<ExamArena />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/admin/arena" element={<AdminArena />} />

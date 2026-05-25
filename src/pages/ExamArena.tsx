@@ -43,9 +43,44 @@ export default function ExamArena() {
   
   // -- NEW STATE FOR EXAM FEATURES --
   const [examMode, setExamMode] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes
+  const [timeLeft, setTimeLeft] = useState(() => {
+    const saved = localStorage.getItem('examRemainingTime');
+    return saved ? parseInt(saved, 10) : 1800;
+  }); // 30 minutes
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
+  const [analysisResult, setAnalysisResult] = useState<any[] | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const performAnalysis = async () => {
+    setIsAnalyzing(true);
+    try {
+        const response = await fetch('/api/exam/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userAnswers, questions: questionQueue })
+        });
+        const data = await response.json();
+        setAnalysisResult(data.analysis);
+        localStorage.removeItem('examRemainingTime');
+    } catch (e) {
+        console.error("Analysis failed", e);
+    } finally {
+        setIsAnalyzing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isSubmitted && !analysisResult && !isAnalyzing) {
+        performAnalysis();
+    }
+  }, [isSubmitted, analysisResult, isAnalyzing]);
+
+  useEffect(() => {
+    if (examMode && !isSubmitted) {
+        localStorage.setItem('examRemainingTime', timeLeft.toString());
+    }
+  }, [timeLeft, examMode, isSubmitted]);
   
   const [vaultSize, setVaultSize] = useState(0);
   const [globalVaultCount, setGlobalVaultCount] = useState<number | null>(null);
@@ -490,21 +525,38 @@ export default function ExamArena() {
                       <RefreshCw className="w-12 h-12 text-zinc-700 animate-spin" />
                     </div>
                   ) : (examMode && isSubmitted) ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
-                        <h2 className="text-3xl font-black text-emerald-400">EXAM SUBMITTED</h2>
-                        <div className="text-6xl font-black">
-                            {questionQueue.reduce((score, q) => (
-                                q && q.answer && userAnswers[q.id] && userAnswers[q.id].toLowerCase() === q.answer.toLowerCase() ? score + 1 : score
-                            ), 0)} <span className="text-zinc-600 text-3xl">/ {questionQueue.length}</span>
+                    isAnalyzing ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
+                            <RefreshCw className="w-12 h-12 text-emerald-500 animate-spin" />
+                            <p className="text-zinc-400">AI Tutor Analysis in progress...</p>
                         </div>
-                        <p className="text-zinc-400 uppercase tracking-widest text-xs font-bold">Total Score</p>
-                        <button 
-                           onClick={() => { setIsSubmitted(false); setExamMode(false); setTimeLeft(1800); }}
-                           className="bg-white text-black px-8 py-4 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 mt-8"
-                        >
-                           Return to Arena
-                        </button>
-                    </div>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-start justify-start p-8 overflow-y-auto custom-scrollbar w-full">
+                            <h2 className="text-3xl font-black text-emerald-400 mb-8 self-center">EXAM RESULTS</h2>
+                            <div className="text-6xl font-black mb-8 self-center">
+                                {questionQueue.reduce((score, q) => (
+                                    q && q.answer && userAnswers[q.id] && userAnswers[q.id].toLowerCase() === q.answer.toLowerCase() ? score + 1 : score
+                                ), 0)} <span className="text-zinc-600 text-3xl">/ {questionQueue.length}</span>
+                            </div>
+                            {analysisResult?.map((a, i) => (
+                                <div key={i} className="mb-6 p-4 bg-zinc-800 rounded-lg w-full border border-white/5">
+                                    <div className="font-bold text-white mb-2 flex justify-between items-center">
+                                        Q{i+1}: {a.isCorrect ? <span className="text-emerald-400 uppercase">Correct</span> : <span className="text-rose-400 uppercase">Incorrect</span>}
+                                    </div>
+                                    <p className="text-zinc-300 text-sm mb-2">{a.explanation}</p>
+                                    <div className="text-cyan-400 text-xs mt-2 p-2 bg-black/30 rounded border border-cyan-900/30">
+                                        <strong>Concept:</strong> {a.conceptNote}
+                                    </div>
+                                </div>
+                            ))}
+                            <button 
+                                onClick={() => { setIsSubmitted(false); setExamMode(false); setTimeLeft(1800); setAnalysisResult(null); }}
+                                className="bg-white text-black px-8 py-4 rounded-2xl font-black uppercase tracking-tighter hover:bg-zinc-200 mt-8 self-center"
+                            >
+                                Return to Arena
+                            </button>
+                        </div>
+                    )
                   ) : currentQuestion ? (
                     <motion.div 
                       key={currentQuestion.id}

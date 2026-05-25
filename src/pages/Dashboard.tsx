@@ -9,13 +9,14 @@ import KnowledgeHub from '@/src/components/hub/KnowledgeHub';
 import SolutionsEngine from '@/src/components/solutions/SolutionsEngine';
 import ExamOracle from '@/src/components/oracle/ExamOracle';
 import ScholarLounge from '@/src/components/social/ScholarLounge';
+import TrendsBoard from './TrendsBoard';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LayoutDashboard, BookOpen, FileEdit, ScrollText, BarChart3, Target, Zap, Activity, Cpu, Swords, ArrowRight, Command } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 
-type View = 'mock-arena' | 'tutorial-hub' | 'syllabus' | 'scholar-stats' | 'admin';
+type View = 'mock-arena' | 'tutorial-hub' | 'syllabus' | 'scholar-stats' | 'trends' | 'admin';
 
 export default function Dashboard() {
   const { user } = useAuthStore();
@@ -53,6 +54,8 @@ export default function Dashboard() {
         <p className="text-slate-400 max-w-lg">Deep performance metrics including percentile ranking and topic weaknesses.</p>
       </div>
     );
+    
+    if (view === 'trends') return <TrendsBoard />;
     
     // The "MOCK ARENA" Dashboard Home
     return (
@@ -211,6 +214,12 @@ export default function Dashboard() {
                   className="rounded-xl gap-2 font-black uppercase tracking-wider text-xs px-5 py-3 data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300 data-[state=active]:border-cyan-500/50 text-slate-400 hover:text-white border border-transparent transition-all"
                 >
                   <BarChart3 className="w-4 h-4" /> Scholar Stats
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="trends" 
+                  className="rounded-xl gap-2 font-black uppercase tracking-wider text-xs px-5 py-3 data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300 data-[state=active]:border-cyan-500/50 text-slate-400 hover:text-white border border-transparent transition-all"
+                >
+                  <Activity className="w-4 h-4" /> Topic Trends
                 </TabsTrigger>
                 {user?.role === 'admin' && (
                   <TabsTrigger 

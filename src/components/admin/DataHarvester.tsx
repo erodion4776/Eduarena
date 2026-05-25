@@ -1,3 +1,4 @@
+import { alocIngestionService } from '@/src/lib/alocIngestionService';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Terminal, Shield, Database, Download, AlertCircle, Play, Save, Settings, Hash, Layers, Cloud, Zap, RefreshCw } from 'lucide-react';
@@ -28,6 +29,18 @@ export default function DataHarvester() {
   const [exhaustMode, setExhaustMode] = useState(true);
   const [cloudSync, setCloudSync] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [syncedQuestions, setSyncedQuestions] = useState<any[]>([]);
+
+  const fetchSyncedQuestions = async () => {
+    try {
+      addLog('FETCHING_SYNCED_QUESTIONS_FROM_SUPABASE...', 'info');
+      const data = await alocIngestionService.fetchAllQuestions();
+      setSyncedQuestions(data);
+      addLog(`SYNC_SUCCESS: Fetched ${data.length} questions from Supabase.`, 'success');
+    } catch (err: any) {
+      addLog(`SYNC_ERROR: ${err.message}`, 'error');
+    }
+  };
   const [currentSubIdx, setCurrentSubIdx] = useState(0);
   const [depletionProgress, setDepletionProgress] = useState(0);
   const terminalEndRef = useRef<HTMLDivElement>(null);

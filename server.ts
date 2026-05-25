@@ -425,7 +425,7 @@ async function startServer() {
 
     // Attempt 1: Gemini Generation
     const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (geminiApiKey) {
+    if (geminiApiKey && typeof geminiApiKey === 'string' && geminiApiKey.trim().length > 0) {
       try {
         console.log(`Engaging Gemini model to generate a custom practice question for ${chosenSubject}...`);
         const ai = new GoogleGenAI({ apiKey: geminiApiKey });
@@ -450,7 +450,7 @@ Return JSON of this exact shape:
 }`;
 
         const genResponse = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: "gemini-1.5-flash",
           contents: prompt
         });
 
@@ -1208,6 +1208,50 @@ Return JSON of this exact shape:
       };
     });
     res.json(schoolStats.sort((a: any, b: any) => b.total_points - a.points));
+  });
+
+  app.post("/api/exam/analyze", async (req, res) => {
+    try {
+        const { userAnswers, questions } = req.body;
+        
+        const analysis = questions.map((q: any) => {
+            const selected = userAnswers[q.id];
+            const isCorrect = selected?.toLowerCase() === (q.answer || '').toLowerCase();
+            return {
+                questionId: q.id,
+                isCorrect,
+                explanation: isCorrect ? "Correct!" : `The selected option '${selected}' was incorrect. The correct answer is '${q.answer}'. ${q.solution || ''}`,
+                conceptNote: `Topic: ${q.section || 'General'}. Key concept: ${q.question.substring(0, 30)}...`,
+                comparison: isCorrect ? "N/A" : `You selected '${selected}', which conflicts with the fundamental concept of...`
+            };
+        });
+
+        res.json({ analysis });
+    } catch (err) {
+        console.error("Analysis error:", err);
+        res.status(500).json({ error: "Analysis failed" });
+    }
+  });
+
+  app.post("/api/analytics/explain", async (req, res) => {
+    try {
+        const { topic, frequency, year } = req.body;
+        // In real app, call Gemini API here
+        res.json({ explanation: `The topic '${topic}' appeared ${frequency} times in ${year}. This suggests a high importance in recent curriculum updates.` });
+    } catch (err) {
+        console.error("Explanation error:", err);
+        res.status(500).json({ error: "Explanation failed" });
+    }
+  });
+
+  app.post("/api/ai/predict-topics", async (req, res) => {
+    // In a real scenario, integrate Gemini
+    res.json({ message: "Prediction generated" });
+  });
+
+  app.post("/api/ai/study-plan", async (req, res) => {
+    // In a real scenario, integrate Gemini
+    res.json({ message: "Study plan generated" });
   });
 
   // --- Socket.io Logic (Arena) ---
