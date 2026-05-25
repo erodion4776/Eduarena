@@ -1114,7 +1114,7 @@ Return JSON of this exact shape:
     } catch (e) {
       console.error("Local match scorer failed:", e);
     }
-    return { context: "" };
+    return { context: "The available syllabus subjects are: Mathematics, Biology, Physics, Chemistry, English, and Government. Please ask for questions or syllabus topics related to these." };
   }
 
   app.post("/api/ai/tutor", async (req, res) => {
@@ -1134,6 +1134,7 @@ Return JSON of this exact shape:
     try {
       // Perform local context matches on the server (RAG)
       const { context: retrievedKnowledge, source: sourceName } = getServerLocalContextMatches(message);
+      console.log("DEBUG: Retreived context:", retrievedKnowledge, "Source:", sourceName);
 
       // Create a default system instruction if none provided
       const defaultSystemInstruction = `You are Tutor Chuks, a brilliant and direct Nigerian AI CBT Tutor. 
@@ -1170,6 +1171,9 @@ Rules:
           systemInstruction
         }
       });
+      
+      console.log("DEBUG: Keys in response:", Object.keys(response));
+      console.log("DEBUG: Response text:", response.text);
 
       res.json({
         response: response.text || "No response received from model. Send another query!",
