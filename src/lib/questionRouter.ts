@@ -103,7 +103,7 @@ export const questionRouter = {
 
   async syncToGlobalVault(question: ALOCQuestion) {
     if (!supabase) {
-      logger.warn("Supabase Sync Skipped: Client not configured.");
+      logger.warn("Supabase Sync Skipped: Client not configured. If deployed on Netlify, remember to set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your Site Configuration menu to activate the Cloud Vault.");
       return;
     }
 
@@ -136,9 +136,12 @@ export const questionRouter = {
           });
         }
       } else {
-        logger.info(`Question ID ${question.id} synced successfully.`);
-        // Dispatch event for real-time UI refresh
+        logger.info(`Question ID ${question.id} synced successfully to Supabase.`);
+        // Dispatch events for real-time UI refresh & notification triggers
         window.dispatchEvent(new CustomEvent('VAULT_SYNCED'));
+        window.dispatchEvent(new CustomEvent('VAULT_QUESTION_SYNCED', { 
+          detail: { id: question.id, subject: question.subject || 'general' } 
+        }));
       }
     } catch (e) {
       logger.error("Cloud Bridge Critical Exception during Sync", e);

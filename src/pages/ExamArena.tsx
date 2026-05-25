@@ -24,6 +24,7 @@ import { questionRouter } from '../lib/questionRouter';
 import { supabase } from '../lib/supabase';
 import { logger } from '../lib/logger';
 import { voiceService } from '../lib/voiceService';
+import { toast } from 'sonner';
 
 export default function ExamArena() {
   const navigate = useNavigate();
@@ -126,6 +127,21 @@ export default function ExamArena() {
     };
     window.addEventListener('VAULT_SYNCED', handleVaultSync);
     return () => window.removeEventListener('VAULT_SYNCED', handleVaultSync);
+  }, []);
+
+  useEffect(() => {
+    const handleQuestionSynced = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        const { id, subject } = customEvent.detail;
+        toast.success(`Question Sent to Cloud!`, {
+          description: `Question ID ${id} (${subject}) was successfully stored in your Supabase DB.`,
+          duration: 4000
+        });
+      }
+    };
+    window.addEventListener('VAULT_QUESTION_SYNCED', handleQuestionSynced);
+    return () => window.removeEventListener('VAULT_QUESTION_SYNCED', handleQuestionSynced);
   }, []);
 
   useEffect(() => {
@@ -268,18 +284,37 @@ export default function ExamArena() {
         </div>
 
         {/* --- STEP 3: NEURAL LINK STATUS BAR --- */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-4 md:px-6 py-3 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl md:rounded-full backdrop-blur-xl">
+        <div className={`flex flex-col md:flex-row items-center justify-between gap-4 px-4 md:px-6 py-3 border rounded-2xl md:rounded-full backdrop-blur-xl transition-colors duration-300 ${
+          supabase 
+            ? 'bg-emerald-500/5 border-emerald-500/20' 
+            : 'bg-amber-500/5 border-amber-500/25'
+        }`}>
           <div className="flex items-center gap-3 w-full md:w-auto">
             <div className="relative shrink-0">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
-              <motion.div 
-                animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="absolute inset-0 bg-emerald-400 rounded-full"
-              />
+              {supabase ? (
+                <>
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                  <motion.div 
+                    animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                    className="absolute inset-0 bg-emerald-400 rounded-full"
+                  />
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-5 h-5 text-amber-500" />
+                  <motion.div 
+                    animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0, 0.6] }}
+                    transition={{ duration: 2.5, repeat: Infinity }}
+                    className="absolute inset-0 bg-amber-500 rounded-full"
+                  />
+                </>
+              )}
             </div>
-            <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-emerald-400/80 line-clamp-1">
-              Status: Connected to National Bank
+            <span className={`text-[10px] md:text-xs font-black uppercase tracking-widest line-clamp-1 ${
+              supabase ? 'text-emerald-400/80' : 'text-amber-500/80'
+            }`}>
+              {supabase ? 'Status: Connected to Supabase Cloud' : 'Status: Local Satellite Offline Mode'}
             </span>
           </div>
           
@@ -291,12 +326,42 @@ export default function ExamArena() {
              <div className="hidden md:block h-4 w-px bg-zinc-800" />
              <div className="flex items-center gap-2">
                 <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">LATENCY</span>
-                <span className="text-[10px] md:text-xs font-mono text-emerald-500">24ms</span>
+                <span className="text-[10px] md:text-xs font-mono text-emerald-400 font-bold">24ms</span>
              </div>
              <div className="hidden md:block h-4 w-px bg-zinc-800" />
+             
+             {/* Dynamic Supabase State Indicator */}
+             <button 
+               onClick={() => {
+                 if (!supabase) {
+                   toast.info("Supabase Offline Guide", {
+                     description: "To connect cloud database, open Netlify settings -> Environment Variables, and set:\n1. VITE_SUPABASE_URL\n2. VITE_SUPABASE_ANON_KEY",
+                     duration: 7000
+                   });
+                 } else {
+                   toast.success("Database Status: Online", {
+                     description: "Successfully linked to Supabase global schema 'global_questions_vault'.",
+                     duration: 4000
+                   });
+                 }
+               }}
+               className="flex items-center gap-2 px-2 py-0.5 rounded hover:bg-zinc-800/50 transition-colors"
+               title={supabase ? "Supabase Connected" : "Click to view Netlify configuration guide"}
+             >
+                <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">CLOUD_DB</span>
+                <span className={`text-[10px] md:text-xs font-mono font-black ${
+                  supabase ? 'text-emerald-400 animate-pulse' : 'text-amber-500 hover:underline'
+                }`}>
+                  {supabase ? 'ONLINE' : 'OFFLINE'}
+                </span>
+             </button>
+             <div className="hidden md:block h-4 w-px bg-zinc-800" />
+
              <div className="flex items-center gap-2">
                 <span className="text-[8px] md:text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">GLOBAL_VAULT</span>
-                <span className="text-[10px] md:text-xs font-mono text-cyan-400">{globalVaultCount ?? '...'}</span>
+                <span className={`text-[10px] md:text-xs font-mono font-bold ${supabase ? 'text-cyan-400' : 'text-zinc-500'}`}>
+                  {supabase ? (globalVaultCount ?? '...') : `${vaultSize} (Local)`}
+                </span>
              </div>
              <div className="hidden md:block h-4 w-px bg-zinc-800" />
              <button 
