@@ -1040,20 +1040,150 @@ Return JSON of this exact shape:
     res.json({ success: true });
   });
 
+  function getServerLocalContextMatches(userQuery: string): { context: string; source?: string } {
+    try {
+      const db = getDb();
+      const queryStr = userQuery.toLowerCase();
+      
+      const queryWords = queryStr
+        .replace(/[^\w\s]/g, ' ')
+        .split(/\s+/)
+        .filter(word => word.length > 2 && !['the', 'and', 'for', 'you', 'what', 'how', 'are', 'can', 'with', 'this', 'who', 'its', 'from', 'then', 'them'].includes(word));
+
+      if (queryWords.length === 0) return { context: "" };
+
+      const scoredMatches: { content: string; source: string; score: number }[] = [];
+
+      // Search db.pastQuestions
+      if (db.pastQuestions && Array.isArray(db.pastQuestions)) {
+        for (const q of db.pastQuestions) {
+          let score = 0;
+          const questionText = `${q.subject || ''} ${q.question_content || q.question_text || ''} ${q.explanation || ''}`.toLowerCase();
+          for (const word of queryWords) {
+            if (questionText.includes(word)) {
+              score += 2;
+            }
+          }
+          if (score > 0) {
+            const optionsStr = q.options ? Object.entries(q.options)
+              .filter(([_, v]) => v && String(v).trim())
+              .map(([k, v]) => `   ${k.toUpperCase()}. ${v}`)
+              .join('\n') : '';
+            let content = `Past Questions Reference:\nQ: ${q.question_text || q.question_content}\n${optionsStr}\nCorrect Option: ${String(q.correct_option || 'A').toUpperCase()}`;
+            if (q.explanation) {
+              content += `\nExplanation: ${q.explanation}`;
+            }
+            scoredMatches.push({
+              content,
+              source: `${q.exam_type || 'UTME'} ${q.year || '2024'} - Question No. ${q.id}`,
+              score
+            });
+          }
+        }
+      }
+
+      // Search db.syllabus
+      if (db.syllabus && Array.isArray(db.syllabus)) {
+        for (const syllabusItem of db.syllabus) {
+          let score = 0;
+          const sText = `${syllabusItem.subject} ${syllabusItem.topic} ${syllabusItem.description}`.toLowerCase();
+          for (const word of queryWords) {
+            if (sText.includes(word)) {
+              score += 1.5;
+            }
+          }
+          if (score > 0) {
+            scoredMatches.push({
+              content: `Syllabus Topic: ${syllabusItem.topic}\nDescription: ${syllabusItem.description}`,
+              source: `${syllabusItem.exam || 'WAEC'} Official Syllabus - ${syllabusItem.subject}`,
+              score
+            });
+          }
+        }
+      }
+
+      scoredMatches.sort((a, b) => b.score - a.score);
+      const bestMatch = scoredMatches[0];
+
+      if (bestMatch) {
+         return {
+           context: `[Source: ${bestMatch.source}] ${bestMatch.content}`,
+           source: bestMatch.source
+         };
+      }
+    } catch (e) {
+      console.error("Local match scorer failed:", e);
+    }
+    return { context: "" };
+  }
+
   app.post("/api/ai/tutor", async (req, res) => {
-    const { message } = req.body;
+    const { message, history, systemInstruction: clientSystemInstruction } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
     const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!geminiApiKey) return res.status(500).json({ error: "AI service unavailable" });
+    if (!geminiApiKey || geminiApiKey === 'undefined') {
+      return res.json({
+        response: "Omo! I am currently running without a live Gemini key. But don't worry, keep practicing under mock conditions! Please configure GEMINI_API_KEY in Settings to activate real-time intelligence panels.",
+        provider: "offline-fallback"
+      });
+    }
 
-    const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
-    
-    // Simple prompt for now, can be improved with syllabus/RAG later
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: `You are an expert tutor for WAEC, JAMB, and NECO exams. Answer this question: ${message}`,
-    });
+    try {
+      // Perform local context matches on the server (RAG)
+      const { context: retrievedKnowledge, source: sourceName } = getServerLocalContextMatches(message);
 
-    res.json({ response: response.text });
+      // Create a default system instruction if none provided
+      const defaultSystemInstruction = `You are Tutor Chuks, a brilliant and direct Nigerian AI CBT Tutor. 
+Focus strictly on exam success. Use relatable Nigerian analogies but stay professional.
+Retrieved Knowledge Context: ${retrievedKnowledge || "No specific database entry found. Use your general training."}
+Rules:
+- Be concise (Under 100 words).
+- If specific past questions are in the 'Retrieved Knowledge', refer to them.
+- If the student asks something outside of academics, politely guide them back to their studies.`;
+
+      const systemInstruction = clientSystemInstruction || defaultSystemInstruction;
+
+      // Construct history contents for Gemini API (Last 5 messages to avoid overflow)
+      const contents: any[] = [];
+      if (history && Array.isArray(history)) {
+        const recentHistory = history.slice(-5);
+        for (const msg of recentHistory) {
+          const role = (msg.sender === 'student' || msg.role === 'user') ? 'user' : 'model';
+          const text = msg.text || msg.content || "";
+          if (text) {
+            contents.push({ role, parts: [{ text }] });
+          }
+        }
+      }
+      
+      // Append the latest user query
+      contents.push({ role: 'user', parts: [{ text: message }] });
+
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents,
+        config: {
+          systemInstruction
+        }
+      });
+
+      res.json({
+        response: response.text || "No response received from model. Send another query!",
+        source: sourceName,
+        provider: "gemini"
+      });
+    } catch (err: any) {
+      console.error("Gemini tutoring service error:", err);
+      // Fail gracefully and return a polite offline message to avoid crashing frontend layout
+      res.json({
+        response: "Omo, I experienced a slight glitch with my engine! Ask that question again, or keep practicing with syllabus tests.",
+        provider: "error-fallback"
+      });
+    }
   });
 
   app.post("/api/ai/notifications/generate", async (req, res) => {

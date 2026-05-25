@@ -22,6 +22,7 @@ import Achievements from '@/src/pages/Achievements';
 import Notifications from '@/src/pages/Notifications';
 import Settings from '@/src/pages/Settings';
 import { Toaster } from '@/components/ui/sonner';
+import AIChatWidget from '@/src/components/ai/AIChatWidget';
 
 
 export default function App() {
@@ -49,6 +50,7 @@ export default function App() {
         </Routes>
       </SidebarLayout>
       <Toaster />
+      <AIChatWidget />
     </Router>
   );
 }

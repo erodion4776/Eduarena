@@ -23,7 +23,13 @@ export default function AITutor() {
       const response = await fetch('/api/ai/tutor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify({ 
+          message: text,
+          history: messages.map(m => ({
+            sender: m.role === 'user' ? 'student' : 'tutor',
+            text: m.content
+          }))
+        })
       });
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'ai', content: data.response }]);
