@@ -17,8 +17,15 @@ interface Message {
 
 export const aiRouter = {
   async askTutorChuks(prompt: string, history: Message[] = []): Promise<AIResponse> {
-    // 1. Fetch relevant context from Supabase (RAG)
+    // 1. Fetch relevant context from Supabase or Local Fallback (RAG)
     const retrievedKnowledge = await getRelevantContext(prompt);
+    
+    // Extract exact source label dynamically from retrieved Knowledge [Source: X] metadata
+    const sourceName = (() => {
+      if (!retrievedKnowledge) return undefined;
+      const match = retrievedKnowledge.match(/\[Source:\s*([^\]]+)\]/);
+      return match ? match[1] : "Edu Vault";
+    })();
     
     // 2. Format Chat History (Last 5 messages)
     const chatHistoryContext = history.slice(-5).map(m => 
@@ -51,7 +58,7 @@ Rules:
           }
         });
         const text = result.text;
-        if (text) return { answer: text.trim(), provider: 'gemini', source: retrievedKnowledge ? "Edu Vault" : undefined };
+        if (text) return { answer: text.trim(), provider: 'gemini', source: sourceName };
       }
     } catch (e) {
       console.warn("Gemini Level 1 Failed. Cascading to Groq...", e);
@@ -71,7 +78,7 @@ Rules:
           max_completion_tokens: 300
         });
         const text = completion.choices[0]?.message?.content;
-        if (text) return { answer: text.trim(), provider: 'groq', source: retrievedKnowledge ? "Edu Vault" : undefined };
+        if (text) return { answer: text.trim(), provider: 'groq', source: sourceName };
       }
     } catch (e) {
       console.warn("Groq Level 2 Failed. Cascading to Hugging Face...", e);
@@ -88,7 +95,7 @@ Rules:
           parameters: { max_new_tokens: 300 }
         });
         if (response.generated_text) {
-          return { answer: response.generated_text.trim(), provider: 'huggingface', source: retrievedKnowledge ? "Edu Vault" : undefined };
+          return { answer: response.generated_text.trim(), provider: 'huggingface', source: sourceName };
         }
       }
     } catch (e) {
