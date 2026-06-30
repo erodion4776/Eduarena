@@ -247,15 +247,40 @@ export default function DataHarvester() {
 
             // Cloud Data Sync
             if (cloudSync && supabase) {
-               const { error: syncError } = await supabase.from('questions').upsert({
-                  aloc_id: q.id, subject: currentSub, exam_type: exam, question_text: q.question,
-                  option_a: q.option.a, option_b: q.option.b, option_c: q.option.c, option_d: q.option.d,
-                  answer: q.answer, explanation: q.solution || '', exam_year: q.examyear,
-                  image_url: cloudImageUrl || q.image || ''
-               }, { onConflict: 'aloc_id' });
+               try {
+                  const syncRes = await alocIngestionService.ingestQuestion(q, currentSub, exam);
+                  if (syncRes.status === 'skipped') {
+                     addLog(`CLOUD_SYNC: Question [${q.id}] already exists (skipped)`, 'info');
+                  } else {
+                     addLog(`CLOUD_SYNC_SUCCESS [${q.id}]: Ingested with embeddings ✓`, 'success');
+                  }
+               } catch (syncError: any) {
+                  // Fallback: direct upsert with correct schema (no embedding)
+                  const rebuiltOptions = {
+                     a: q.option?.a ?? '',
+                     b: q.option?.b ?? '',
+                     c: q.option?.c ?? '',
+                     d: q.option?.d ?? '',
+                     ...(q.option?.e ? { e: q.option.e } : {})
+                  };
 
-               if (syncError) { // FIX 2
-                  addLog(`CLOUD_SYNC_FAIL [${q.id}]: ${syncError.message}`, 'error');
+                  const { error: fallbackError } = await supabase.from('questions').upsert({
+                     source_id: q.id,
+                     subject: currentSub.toLowerCase(),
+                     exam_type: exam.toLowerCase(),
+                     year: parseInt(q.examyear, 10) || 0,
+                     question_text: q.question,
+                     options: rebuiltOptions,
+                     correct_answer: q.answer ?? 'a',
+                     explanation: q.solution || '',
+                     topic: q.section ?? 'General'
+                  }, { onConflict: 'source_id' });
+
+                  if (fallbackError) {
+                     addLog(`CLOUD_SYNC_FAIL [${q.id}]: ${fallbackError.message}`, 'error');
+                  } else {
+                     addLog(`CLOUD_SYNC_SUCCESS [${q.id}]: Upserted without embedding ✓`, 'success');
+                  }
                }
             }
 

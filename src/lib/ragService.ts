@@ -320,12 +320,9 @@ export const ragService = {
 
   /**
    * Retrieve relevant context for a query from the knowledge vault.
-   *
-   * FIX 3: Explicit supabase null guard replaces the unsafe ! assertion.
-   * Prefer memoryManager.getRelevantContext() for the full RAG pipeline.
+   * Explicit supabase null guard replaces the unsafe ! assertion.
    */
   async retrieveContext(query: string): Promise<string | null> {
-    // ✅ Explicit guard — no non-null assertion needed
     if (!supabase) {
       console.warn('[RAGService] retrieveContext: Supabase client not available.');
       return null;
@@ -353,4 +350,3 @@ export const ragService = {
     }
   },
 };
-
