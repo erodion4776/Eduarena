@@ -1,7 +1,7 @@
 import { alocIngestionService } from '@/src/lib/alocIngestionService';
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Terminal, Shield, Database, Download, AlertCircle, Play, Save, Settings, Hash, Layers, Cloud, Zap, RefreshCw } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { motion } from 'motion/react';
+import { Terminal, Shield, Database, Layers, Cloud, RefreshCw } from 'lucide-react';
 import initSqlJs from 'sql.js';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -9,18 +9,30 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useThemeStore } from '@/src/store/useThemeStore';
 import { supabase } from '@/src/lib/supabase';
 
 interface LogEntry {
-  id: string;
+  id: number; // ✅ FIX 11: integer counter, not Math.random()
   timestamp: string;
   message: string;
   type: 'info' | 'error' | 'success' | 'warning' | 'terminal';
 }
 
+/**
+ * FIX 6 & 3: Interruptible delay that respects AbortSignal.
+ * Resolves early when signal fires — HALT instantly unblocks waits.
+ */
+function interruptibleDelay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timerId = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => {
+      clearTimeout(timerId);
+      reject(new DOMException('Harvest halted.', 'AbortError'));
+    }, { once: true });
+  });
+}
+
 export default function DataHarvester() {
-  const { mode } = useThemeStore();
   const [token, setToken] = useState('');
   const [count, setCount] = useState(10);
   const [subject, setSubject] = useState('english, mathematics, biology, physics, chemistry');
@@ -30,55 +42,88 @@ export default function DataHarvester() {
   const [cloudSync, setCloudSync] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [syncedQuestions, setSyncedQuestions] = useState<any[]>([]);
-
-  const fetchSyncedQuestions = async () => {
-    try {
-      addLog('FETCHING_SYNCED_QUESTIONS_FROM_SUPABASE...', 'info');
-      const data = await alocIngestionService.fetchAllQuestions();
-      setSyncedQuestions(data);
-      addLog(`SYNC_SUCCESS: Fetched ${data.length} questions from Supabase.`, 'success');
-    } catch (err: any) {
-      addLog(`SYNC_ERROR: ${err.message}`, 'error');
-    }
-  };
   const [currentSubIdx, setCurrentSubIdx] = useState(0);
   const [depletionProgress, setDepletionProgress] = useState(0);
+
+  // FIX 8: Track elapsed time properly via interval
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
   const terminalEndRef = useRef<HTMLDivElement>(null);
   const stopRequested = useRef(false);
+  const logCounterRef = useRef(0); // FIX 11: monotonic ID
+  const abortRef = useRef<AbortController | null>(null); // FIX 3
+  const startTimeRef = useRef(0); // FIX 8
 
   const subjectsInQueue = useMemo(() => 
     subject.split(',').map(s => s.trim()).filter(Boolean), 
   [subject]);
 
-  const addLog = (message: string, type: LogEntry['type'] = 'info') => {
-    const newLog: LogEntry = {
-      id: Math.random().toString(36).substring(7),
-      timestamp: new Date().toLocaleTimeString(),
-      message,
-      type,
-    };
-    setLogs(prev => [...prev, newLog].slice(-100)); // Keep last 100 logs for perf
-  };
+  // ── FIX 7: stable addLog via useCallback ────────────────────────
+  const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
+    setLogs(prev => [
+      ...prev,
+      {
+        id: ++logCounterRef.current,
+        timestamp: new Date().toLocaleTimeString(),
+        message,
+        type,
+      },
+    ].slice(-100)); // Keep last 100 logs for perf
+  }, []);
 
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
+  // FIX 8: Elapsed time counter — runs only while harvesting
+  useEffect(() => {
+    if (!isHarvesting) {
+      setElapsedSeconds(0);
+      return;
+    }
+    startTimeRef.current = performance.now();
+    const interval = setInterval(() => {
+      setElapsedSeconds(
+        Math.floor((performance.now() - startTimeRef.current) / 1000)
+      );
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isHarvesting]);
+
+  // ── fetchSyncedQuestions — FIX 4: wired to a button in the UI ───
+  const fetchSyncedQuestions = async () => {
+    try {
+      addLog('FETCHING_SYNCED_QUESTIONS_FROM_SUPABASE...', 'info');
+      const res = await alocIngestionService.fetchAllQuestions();
+      setSyncedQuestions(res.data);
+      addLog(`SYNC_SUCCESS: Fetched ${res.data.length} questions from Supabase.`, 'success');
+    } catch (err: any) {
+      addLog(`SYNC_ERROR: ${err.message}`, 'error');
+    }
+  };
+
   const startHarvest = async () => {
-    if (!token) {
+    if (!token.trim()) {
       addLog('FATAL: ACCESS TOKEN VOID', 'error');
       return;
     }
+
+    // FIX 3: fresh AbortController per harvest run
+    abortRef.current = new AbortController();
+    const { signal } = abortRef.current;
 
     setIsHarvesting(true);
     stopRequested.current = false;
     setLogs([]);
     addLog(`INIT HARVEST PROTOCOL v2.0.2 [${subjectsInQueue.length} SUBJECTS IN QUEUE]`, 'info');
     
+    // FIX 5: declare db outside try so finally can close it
+    let db: any = null;
+
     try {
       addLog('BOOTING VIRTUAL SQL_ENGINE...', 'info');
       
-      const wasmRes = await fetch('https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/sql-wasm.wasm');
+      const wasmRes = await fetch('https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/sql-wasm.wasm', { signal });
       if (!wasmRes.ok) throw new Error('WASM_LOAD_FAILURE: CDN unreachable');
       const wasmBinary = await wasmRes.arrayBuffer();
 
@@ -86,7 +131,7 @@ export default function DataHarvester() {
         wasmBinary
       });
       
-      const db = new SQL.Database();
+      db = new SQL.Database();
       db.run(`CREATE TABLE questions (
         id INTEGER PRIMARY KEY, 
         aloc_id INTEGER,
@@ -105,7 +150,7 @@ export default function DataHarvester() {
       const zip = new JSZip();
 
       for (let sIdx = 0; sIdx < subjectsInQueue.length; sIdx++) {
-        if (stopRequested.current) break;
+        if (signal.aborted) break;
         
         setCurrentSubIdx(sIdx);
         setDepletionProgress(0);
@@ -120,7 +165,7 @@ export default function DataHarvester() {
         let iterations = exhaustMode ? 10000 : count;
 
         for (let i = 0; i < iterations; i++) {
-          if (stopRequested.current) break;
+          if (signal.aborted) break;
 
           try {
             // Use the proxy endpoint with custom token delegation support to avoid CORS / quota block limits
@@ -129,13 +174,14 @@ export default function DataHarvester() {
               headers: { 
                 'Accept': 'application/json', 
                 'AccessToken': token.trim() 
-              }
+              },
+              signal, // FIX 3: fetch respects HALT signal
             });
 
             if (!response.ok) {
               if (response.status === 429) {
                 addLog(`RATE_LIMIT (429): THROTTLING 10s`, 'warning');
-                await new Promise(r => setTimeout(r, 10000));
+                await interruptibleDelay(10000, signal); // FIX 6
                 continue;
               }
               const errText = await response.text();
@@ -171,32 +217,46 @@ export default function DataHarvester() {
             // Image -> Supabase Logic
             if (q.image && cloudSync && supabase) {
                 try {
-                    const imgRes = await fetch(q.image);
-                    if (imgRes.ok) {
-                        const blob = await imgRes.blob();
-                        const path = `questions/${currentSub}/${q.id}.png`;
-                        const { error: uploadError } = await supabase.storage
-                            .from('question_assets')
-                            .upload(path, blob, { upsert: true });
+                    // FIX 9: image fetch with 10s timeout
+                    const imgController = new AbortController();
+                    const imgTimer = setTimeout(() => imgController.abort(), 10000);
 
-                        if (!uploadError) {
-                            const { data: { publicUrl } } = supabase.storage.from('question_assets').getPublicUrl(path);
-                            cloudImageUrl = publicUrl;
+                    try {
+                        const imgRes = await fetch(q.image, { signal: imgController.signal });
+                        if (imgRes.ok) {
+                            const blob = await imgRes.blob();
+                            const path = `questions/${currentSub}/${q.id}.png`;
+                            const { error: uploadError } = await supabase.storage
+                                .from('question_assets')
+                                .upload(path, blob, { upsert: true });
+
+                            if (!uploadError) {
+                                const { data: { publicUrl } } = supabase.storage.from('question_assets').getPublicUrl(path);
+                                cloudImageUrl = publicUrl;
+                            }
                         }
+                    } finally {
+                        clearTimeout(imgTimer);
                     }
-                } catch (e) {
-                    addLog(`IMAGE_SYNC_BLOCK: ${q.id}`, 'error');
+                } catch (e: any) {
+                    if (e.name !== 'AbortError') {
+                        addLog(`IMAGE_SYNC_BLOCK: ${q.id}`, 'error');
+                    }
                 }
             }
 
             // Cloud Data Sync
             if (cloudSync && supabase) {
-               await supabase.from('questions').upsert({
+               const { error: syncError } = await supabase.from('questions').upsert({
                   aloc_id: q.id, subject: currentSub, exam_type: exam, question_text: q.question,
                   option_a: q.option.a, option_b: q.option.b, option_c: q.option.c, option_d: q.option.d,
                   answer: q.answer, explanation: q.solution || '', exam_year: q.examyear,
                   image_url: cloudImageUrl || q.image || ''
                }, { onConflict: 'aloc_id' });
+
+               if (syncError) { // FIX 2
+                  addLog(`CLOUD_SYNC_FAIL [${q.id}]: ${syncError.message}`, 'error');
+               }
             }
 
             // Local DB Sync
@@ -206,10 +266,15 @@ export default function DataHarvester() {
             successCount++;
             if (successCount % 5 === 0) addLog(`COMMITTED: ${successCount} NODES [${currentSub}]`, 'success');
             
-            await new Promise(r => setTimeout(r, 600 + Math.random() * 600));
+            // FIX 12: skip delay on final item of final subject
+            const isLastItem = sIdx === subjectsInQueue.length - 1 && i === iterations - 1;
+            if (!isLastItem) {
+               await interruptibleDelay(600 + Math.random() * 600, signal); // FIX 6
+            }
           } catch (err: any) {
+            if (err.name === 'AbortError') break; // clean exit on HALT
             addLog(`SCRAPE_EXCEPTION: ${err.message}`, 'error');
-            await new Promise(r => setTimeout(r, 2000));
+            await interruptibleDelay(2000, signal).catch(() => {}); // FIX 6
           }
         }
       }
@@ -221,11 +286,21 @@ export default function DataHarvester() {
       addLog('MASTER HARVEST COMPLETE. DOWNLOAD READY.', 'success');
 
     } catch (err: any) {
-      addLog(`FATAL_CRASH: ${err.message}`, 'error');
+      if (err.name !== 'AbortError') {
+         addLog(`FATAL_CRASH: ${err.message}`, 'error');
+      } else {
+         addLog('HARVEST HALTED BY OPERATOR.', 'warning');
+      }
     } finally {
+      db?.close(); // FIX 5: always close WASM DB to avoid memory leak
       setIsHarvesting(false);
       setDepletionProgress(0);
     }
+  };
+
+  const handleHalt = () => {
+    stopRequested.current = true;
+    abortRef.current?.abort(); // FIX 3: cancels fetch + all delays
   };
 
   return (
@@ -255,7 +330,8 @@ export default function DataHarvester() {
           <div className="flex-1 max-w-sm">
              <div className="flex justify-between text-[10px] font-black uppercase mb-1.5 opacity-60">
                 <span>Subject Pipeline</span>
-                <span>{currentSubIdx + 1} / {subjectsInQueue.length}</span>
+                {/* FIX 10: only show count when harvesting */}
+                <span>{isHarvesting ? currentSubIdx + 1 : 0} / {subjectsInQueue.length}</span>
              </div>
              <div className="flex gap-1">
                 {subjectsInQueue.map((s, i) => (
@@ -307,7 +383,13 @@ export default function DataHarvester() {
                           </div>
                           <div className={`space-y-2 transition-all duration-500 ${exhaustMode ? 'opacity-20 pointer-events-none scale-95' : 'opacity-100'}`}>
                              <label className="text-[9px] font-black uppercase opacity-40">STATIC_COUNT</label>
-                             <Input type="number" className="h-12 bg-black border-[#00FF41]/30 text-[#00FF41] rounded-none font-black" value={count} onChange={e => setCount(parseInt(e.target.value))} />
+                             <Input 
+                                type="number" 
+                                min={1}
+                                className="h-12 bg-black border-[#00FF41]/30 text-[#00FF41] rounded-none font-black" 
+                                value={count} 
+                                onChange={e => setCount(parseInt(e.target.value, 10) || 1)} // FIX 1
+                             />
                           </div>
                        </div>
 
@@ -330,16 +412,30 @@ export default function DataHarvester() {
                     </div>
                  </div>
 
-                 <div className="flex gap-2 relative">
-                    <Button 
-                      onClick={startHarvest} 
-                      disabled={isHarvesting} 
-                      className="flex-1 h-16 bg-[#00FF41] text-black font-black text-2xl italic tracking-tighter rounded-none hover:bg-black hover:text-[#00FF41] border-2 border-[#00FF41] disabled:opacity-30"
-                    >
-                      {isHarvesting ? 'SCAN_DECODING_LIVE...' : 'AWAKEN_HARVESTER_CORE'}
-                    </Button>
-                    {isHarvesting && (
-                      <Button onClick={() => stopRequested.current = true} className="h-16 px-6 bg-red-600 hover:bg-red-700 text-white font-black rounded-none">HALT</Button>
+                 <div className="flex flex-col gap-4">
+                    <div className="flex gap-2 relative">
+                       <Button 
+                         onClick={startHarvest} 
+                         disabled={isHarvesting} 
+                         className="flex-1 h-16 bg-[#00FF41] text-black font-black text-2xl italic tracking-tighter rounded-none hover:bg-black hover:text-[#00FF41] border-2 border-[#00FF41] disabled:opacity-30"
+                       >
+                         {isHarvesting ? 'SCAN_DECODING_LIVE...' : 'AWAKEN_HARVESTER_CORE'}
+                       </Button>
+                       {isHarvesting && (
+                         <Button onClick={handleHalt} className="h-16 px-6 bg-red-600 hover:bg-red-700 text-white font-black rounded-none">HALT</Button>
+                       )}
+                    </div>
+
+                    {/* FIX 4: fetchSyncedQuestions trigger button */}
+                    {cloudSync && (
+                       <Button
+                         onClick={fetchSyncedQuestions}
+                         variant="outline"
+                         className="w-full h-10 border-[#00FF41]/30 text-[#00FF41] bg-transparent rounded-none font-black text-xs uppercase tracking-widest"
+                       >
+                         <Database className="w-3.5 h-3.5 mr-2" />
+                         FETCH VAULT MANIFEST ({syncedQuestions.length} cached)
+                       </Button>
                     )}
                  </div>
               </div>
@@ -416,13 +512,13 @@ export default function DataHarvester() {
            </div>
         </div>
 
+        {/* Footer — FIX 8: uses interval-tracked elapsed time */}
         <footer className="flex justify-between items-center text-[9px] font-black uppercase opacity-20 border-t border-[#00FF41]/20 pt-6 pb-12">
             <span>Core: ALU-9000-POWERED</span>
-            <span>Est_Runtime: {Math.floor(performance.now()/1000)}s</span>
+            <span>Est_Runtime: {elapsedSeconds}s</span>
             <span>Security: HARDENED_ENCRYPT</span>
         </footer>
       </div>
     </div>
   );
 }
-

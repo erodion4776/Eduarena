@@ -1,17 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { 
-  Plus, Search, Database, FileJson, Trash2, Edit2, 
-  Upload, CheckCircle2, AlertCircle, Cpu, Activity, 
-  Save, RefreshCw, Layers, Sparkles, Book, ChevronRight,
-  LayoutGrid, List, SearchCode, Image, Calculator, FileText,
-  AlertTriangle
+  Plus, Search, Database, Trash2, Edit2, 
+  Upload, CheckCircle2, Cpu, Activity, 
+  Save, RefreshCw, Layers, Sparkles, FileText,
+  AlertTriangle, Image, Calculator, LayoutGrid
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Select, 
   SelectContent, 
@@ -27,6 +25,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import { supabase } from '@/src/lib/supabase';
 
 const EXAM_TYPES = ['JAMB', 'WAEC', 'NECO'] as const;
 const YEARS = Array.from({ length: 2026 - 1983 }, (_, i) => 2025 - i);
@@ -34,7 +33,8 @@ const YEARS = Array.from({ length: 2026 - 1983 }, (_, i) => 2025 - i);
 export default function QuestionFactory() {
   const [activeTab, setActiveTab] = useState('manager');
   const [subjects, setSubjects] = useState<any[]>([]);
-  const [topics, setTopics] = useState<any[]>([]);
+  const [allTopics, setAllTopics] = useState<any[]>([]);
+  const [libraryQuestions, setLibraryQuestions] = useState<any[]>([]);
   
   // Form State
   const [selectedSubject, setSelectedSubject] = useState('');
@@ -48,72 +48,163 @@ export default function QuestionFactory() {
   const [imageURL, setImageURL] = useState('');
   const [difficulty, setDifficulty] = useState('5');
 
-  // List State
-  const [libraryQuestions, setLibraryQuestions] = useState<any[]>([]);
+  // Edit / CRUD State
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  
+  // Search & Pagination State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 50;
+
+  // Loading / Feedback States
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   // Subject/Topic Manager State
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newTopicName, setNewTopicName] = useState('');
   const [targetSubjectId, setTargetSubjectId] = useState('');
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Toast Helper
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   useEffect(() => {
     fetchData();
   }, []);
 
   const fetchData = async () => {
-    const [subRes, qRes] = await Promise.all([
-      fetch('/api/admin/subjects'),
-      fetch('/api/admin/questions')
-    ]);
-    const subData = await subRes.json();
-    const qData = await qRes.json();
-    setSubjects(subData);
-    setLibraryQuestions(qData.questions);
-    
-    // Also fetch all topics for context
-    const topRes = await fetch('/api/oracle/topics');
-    // Note: The previous turn's /api/oracle/topics returns strings.
-    // I refactored server but kept Oracle routes. 
-    // For Admin I need the full objects.
-  };
-
-  const filteredTopics = useMemo(() => {
-    // This would normally fetch from API but I'll use a local filter for demo speed
-    // if I had all topics loaded. For now, let's fetch on subject change.
-    return topics.filter(t => t.subject_id === selectedSubject);
-  }, [topics, selectedSubject]);
-
-  const handleSubjectChange = async (val: string) => {
-    setSelectedSubject(val);
-    const res = await fetch(`/api/oracle/topics?subject_id=${val}`); // Added subject_id query param to Oracle in thought (need to verify server support)
-    // Actually server /api/oracle/topics used 'subject' name.
-    // I'll add a specific admin topics getter or use the refactored database.
-  };
-
-  useEffect(() => {
-    if (selectedSubject) {
-      // Reload topics for the selected subject
-      fetch(`/api/admin/topics?subject_id=${selectedSubject}`)
-        .then(res => res.json())
-        .then(setTopics);
-    }
-  }, [selectedSubject]);
-
-  const handleImageUpload = () => {
-    // Simulate Supabase upload
     setIsLoading(true);
-    setTimeout(() => {
-      const mockUrl = `https://supabase.exam-media.eduarena/diagrams/${Date.now()}.png`;
-      setImageURL(mockUrl);
+    try {
+      const [subRes, qRes, topRes] = await Promise.all([
+        fetch('/api/admin/subjects'),
+        fetch('/api/admin/questions'),
+        fetch('/api/oracle/topics')
+      ]);
+
+      if (!subRes.ok) throw new Error(`Subjects fetch failed: ${subRes.status}`);
+      if (!qRes.ok) throw new Error(`Questions fetch failed: ${qRes.status}`);
+      if (!topRes.ok) throw new Error(`Topics fetch failed: ${topRes.status}`);
+
+      const subData = await subRes.json();
+      const qData = await qRes.json();
+      const topData = await topRes.json();
+
+      setSubjects(Array.isArray(subData) ? subData : []);
+      setLibraryQuestions(Array.isArray(qData.questions) ? qData.questions : []);
+      setAllTopics(Array.isArray(topData) ? topData : []);
+    } catch (err: any) {
+      console.error('[QuestionFactory] fetchData failed:', err);
+      showToast(`Data load failed: ${err.message}`, 'error');
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
+  };
+
+  // Memoized filter for the Creator unit selection
+  const filteredTopics = useMemo(() => {
+    if (!selectedSubject) return [];
+    return allTopics.filter(t => t.subject_id === selectedSubject);
+  }, [allTopics, selectedSubject]);
+
+  // Memoized filter for Search on the Library tab
+  const filteredLibrary = useMemo(() => {
+    if (!searchQuery.trim()) return libraryQuestions;
+    const q = searchQuery.toLowerCase();
+    return libraryQuestions.filter(item =>
+      (item.question_text ?? item.question_content ?? '').toLowerCase().includes(q) ||
+      (item.explanation ?? '').toLowerCase().includes(q) ||
+      String(item.year ?? '').includes(q)
+    );
+  }, [libraryQuestions, searchQuery]);
+
+  // Pagination calculations
+  const paginatedQuestions = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredLibrary.slice(start, start + PAGE_SIZE);
+  }, [filteredLibrary, currentPage]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredLibrary.length / PAGE_SIZE));
+
+  // Reset page to 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  const handleSubjectChange = (val: string) => {
+    setSelectedSubject(val);
+    setSelectedTopic(''); // Reset topic when subject changes
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!supabase) {
+      showToast("Supabase configuration missing in env setup.", "error");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const path = `diagrams/${Date.now()}_${file.name}`;
+      const { error } = await supabase.storage
+        .from('exam-media')
+        .upload(path, file, { upsert: false });
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('exam-media')
+        .getPublicUrl(path);
+
+      setImageURL(publicUrl);
+      showToast("Image uploaded to public S3!", "success");
+    } catch (err: any) {
+      console.error('[QuestionFactory] Image upload failed:', err);
+      showToast(`Image upload failed: ${err.message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteQuestion = async (id: string) => {
+    if (!confirm('Delete this question permanently from EduArena?')) return;
+    try {
+      const res = await fetch(`/api/admin/questions/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete operation failed');
+      setLibraryQuestions(prev => prev.filter(q => q.id !== id));
+      showToast('Question deleted permanently.', 'success');
+    } catch (err: any) {
+      console.error('[QuestionFactory] delete failed:', err);
+      showToast(`Delete failed: ${err.message}`, 'error');
+    }
+  };
+
+  const handleEditQuestion = (q: any) => {
+    setEditingQuestionId(q.id);
+    setExamType(q.exam_type || q.exam_body || 'JAMB');
+    setYear(String(q.year || '2025'));
+    setSelectedSubject(q.subject_id || '');
+    setSelectedTopic(q.topic_id || '');
+    setQuestionText(q.question_text ?? q.question_content ?? '');
+    setOptions(q.options ?? { A: '', B: '', C: '', D: '', E: '' });
+    setCorrectOption(q.correct_option ?? 'A');
+    setExplanation(q.explanation ?? '');
+    setImageURL(q.image_url ?? '');
+    setDifficulty(String(q.difficulty_level ?? 5));
+    setActiveTab('creator'); // Switch focus to input stream
+    showToast(`Loaded question ${q.id.slice(0, 8)} for editing.`, 'success');
   };
 
   const handleSaveQuestion = async () => {
-    if (!questionText || !selectedSubject || !selectedTopic) {
-      alert("Please fill all required fields");
+    if (!questionText.trim() || !selectedSubject || !selectedTopic) {
+      showToast("Please fill all required fields", "error");
       return;
     }
 
@@ -132,56 +223,92 @@ export default function QuestionFactory() {
     };
 
     try {
-      const res = await fetch('/api/admin/questions', {
-        method: 'POST',
+      const isEdit = !!editingQuestionId;
+      const url = isEdit ? `/api/admin/questions/${editingQuestionId}` : '/api/admin/questions';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || 'Request rejected by system');
       
-      // Reset
+      // Reset form on success
       setQuestionText('');
       setOptions({ A: '', B: '', C: '', D: '', E: '' });
       setExplanation('');
       setImageURL('');
+      setEditingQuestionId(null);
+      
       fetchData();
-      alert("Question Added to Archive!");
+      showToast(isEdit ? "Question Updated in Archive!" : "Question Added to Archive!", "success");
     } catch (e: any) {
-      alert(e.message);
+      showToast(e.message, "error");
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleAddSubject = async () => {
-    if (!newSubjectName) return;
-    const res = await fetch('/api/admin/subjects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newSubjectName, category: 'Science' })
-    });
-    if (res.ok) {
+    const cleanName = newSubjectName.trim();
+    if (!cleanName) return;
+    try {
+      const res = await fetch('/api/admin/subjects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: cleanName, category: 'Science' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to establish domain');
       setNewSubjectName('');
       fetchData();
+      showToast(`Subject '${cleanName}' active!`, 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
     }
   };
 
   const handleAddTopic = async () => {
-    if (!newTopicName || !targetSubjectId) return;
-    const res = await fetch('/api/admin/topics', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subject_id: targetSubjectId, name: newTopicName })
-    });
-    if (res.ok) {
+    const cleanName = newTopicName.trim();
+    if (!cleanName || !targetSubjectId) return;
+    try {
+      const res = await fetch('/api/admin/topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject_id: targetSubjectId, name: cleanName })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to bind topic unit');
       setNewTopicName('');
       fetchData();
+      showToast(`Topic unit mapped successfully!`, 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
     }
   };
 
   return (
     <div className="max-w-[1600px] mx-auto p-4 md:p-8 space-y-8 font-sans">
+      {/* Toast Alert Banner */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className={`fixed top-6 right-6 z-50 px-6 py-4 border-2 font-mono text-xs font-black uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] rounded-none
+              ${toast.type === 'success'
+                ? 'bg-emerald-50 border-emerald-600 text-emerald-800'
+                : 'bg-red-50 border-red-600 text-red-800'}`}
+          >
+            {toast.type === 'success' ? '✓ ' : '✗ '}
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header: Mission Control Style */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b-2 border-slate-900">
         <div className="space-y-2">
@@ -320,6 +447,30 @@ export default function QuestionFactory() {
                     </div>
                 </div>
                 <CardContent className="p-8 space-y-8">
+                    {/* Active Edit Alert Bar */}
+                    {editingQuestionId && (
+                      <div className="flex items-center justify-between bg-amber-500/15 border-2 border-amber-500 p-4 rounded-none text-slate-900 text-xs">
+                        <div className="font-black flex items-center gap-2 uppercase tracking-wide">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 animate-bounce" />
+                          Editing question: {editingQuestionId.slice(0, 8)}...
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => {
+                            setEditingQuestionId(null);
+                            setQuestionText('');
+                            setOptions({ A: '', B: '', C: '', D: '', E: '' });
+                            setExplanation('');
+                            setImageURL('');
+                          }} 
+                          className="text-amber-800 hover:text-red-700 underline font-black uppercase text-[10px] tracking-widest h-auto p-1"
+                        >
+                          Cancel Edit
+                        </Button>
+                      </div>
+                    )}
+
                     {/* Meta Selectors */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="space-y-1.5">
@@ -357,12 +508,13 @@ export default function QuestionFactory() {
                         </div>
                         <div className="space-y-1.5">
                             <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Topic Unit</Label>
+                            {/* FIX 8: Uses filteredTopics memo */}
                             <Select value={selectedTopic} onValueChange={setSelectedTopic} disabled={!selectedSubject}>
                                 <SelectTrigger className="rounded-none border-2 border-slate-900 h-10">
                                     <SelectValue placeholder="Pick Topic" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-none border-2 border-slate-900">
-                                    {topics.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                                    {filteredTopics.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -375,7 +527,13 @@ export default function QuestionFactory() {
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
                                     <FileText className="w-3 h-3" /> Question Text (Supports LaTeX)
                                 </Label>
-                                <Button variant="link" className="h-auto p-0 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Clear Math Helper</Button>
+                                <Button 
+                                    variant="link" 
+                                    onClick={() => setQuestionText("")}
+                                    className="h-auto p-0 text-[10px] font-bold text-slate-400 hover:text-red-500 uppercase tracking-widest"
+                                >
+                                    Clear Text
+                                </Button>
                             </div>
                             <Textarea 
                                 className="min-h-[140px] rounded-none border-2 border-slate-900 focus-visible:ring-0 focus-visible:border-red-600 font-mono text-sm leading-relaxed p-4"
@@ -394,7 +552,19 @@ export default function QuestionFactory() {
                                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-900">Diagram Ingest (Supabase Integration)</p>
                                 <p className="text-[9px] font-medium text-slate-400 uppercase mt-0.5">Bucket: exam-media // Protocol: Public S3</p>
                             </div>
-                            <Button variant="outline" onClick={handleImageUpload} disabled={isLoading} className="rounded-none bg-white border-2 border-slate-900 hover:bg-slate-900 hover:text-white px-4 h-10 font-bold uppercase text-[10px] tracking-widest">
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleImageUpload}
+                            />
+                            <Button 
+                              variant="outline" 
+                              onClick={() => fileInputRef.current?.click()} 
+                              disabled={isLoading} 
+                              className="rounded-none bg-white border-2 border-slate-900 hover:bg-slate-900 hover:text-white px-4 h-10 font-bold uppercase text-[10px] tracking-widest"
+                            >
                                 {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
                                 {imageURL ? 'Uploaded ✅' : 'Trigger Upload'}
                             </Button>
@@ -465,7 +635,9 @@ export default function QuestionFactory() {
                                 className="w-full md:w-auto bg-slate-900 text-white rounded-none border-2 border-slate-900 hover:bg-emerald-600 hover:border-emerald-600 px-12 py-8 h-auto flex flex-col gap-1 transition-all"
                             >
                                 {isSaving ? <RefreshCw className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
-                                <span className="text-[10px] font-black uppercase tracking-widest italic">{isSaving ? 'Processing' : 'Commit to Archive'}</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest italic">
+                                  {isSaving ? 'Processing' : editingQuestionId ? 'Update Question' : 'Commit to Archive'}
+                                </span>
                             </Button>
                         </div>
                     </div>
@@ -498,6 +670,13 @@ export default function QuestionFactory() {
                                     {questionText || "Question preview will appear here..."}
                                 </ReactMarkdown>
                             </div>
+
+                            {/* Image Preview if available */}
+                            {imageURL && (
+                              <div className="max-w-md mx-auto border-2 border-slate-900 p-2 bg-slate-50 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                                <img src={imageURL} alt="Diagram Asset" className="max-h-64 mx-auto object-contain" referrerPolicy="no-referrer" />
+                              </div>
+                            )}
 
                             {/* Options Preview */}
                             <div className="grid grid-cols-1 gap-3">
@@ -557,15 +736,21 @@ export default function QuestionFactory() {
                 <CardHeader className="bg-slate-900 border-b-2 border-slate-900 py-6">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div className="space-y-1">
-                            <CardTitle className="text-xl font-black italic uppercase text-white tracking-tighter">Arhival Repository</CardTitle>
-                            <CardDescription className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Browsing {libraryQuestions.length} records</CardDescription>
+                            <CardTitle className="text-xl font-black italic uppercase text-white tracking-tighter">Archival Repository</CardTitle>
+                            {/* FIX 5: Dynamic Counter mapping */}
+                            <CardDescription className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                Browsing {filteredLibrary.length} of {libraryQuestions.length} records
+                            </CardDescription>
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                                {/* FIX 5: searchQuery binding */}
                                 <Input 
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
                                     placeholder="Search formulas, text, topics..." 
-                                    className="pl-10 pr-4 py-6 bg-slate-800 border-none text-white placeholder:text-slate-500 rounded-none w-64 text-xs font-bold"
+                                    className="pl-10 pr-4 py-6 bg-slate-800 border-none text-white placeholder:text-slate-500 rounded-none w-64 text-xs font-bold focus-visible:ring-0"
                                 />
                             </div>
                         </div>
@@ -583,12 +768,13 @@ export default function QuestionFactory() {
                             </tr>
                         </thead>
                         <tbody>
-                            {libraryQuestions.map((q, idx) => (
+                            {/* FIX 6: Maps paginatedQuestions instead of libraryQuestions */}
+                            {paginatedQuestions.map((q, idx) => (
                                 <tr key={q.id} className="border-b border-slate-100 hover:bg-slate-50/80 cursor-pointer group transition-colors">
                                     <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 font-mono">
                                             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                            <span className="text-[10px] font-black text-slate-900 font-mono tracking-tighter uppercase">{q.id.split('-')[0]}...</span>
+                                            <span className="text-[10px] font-black text-slate-900 tracking-tighter uppercase">{String(q.id).slice(0, 8)}...</span>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
@@ -602,8 +788,9 @@ export default function QuestionFactory() {
                                             <span className="text-xs font-black text-slate-900 uppercase italic leading-none">
                                                 {subjects.find(s => s.id === q.subject_id)?.name || 'Unknown'}
                                             </span>
+                                            {/* FIX 10: Reads matched topic name from allTopics */}
                                             <span className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
-                                                {topics.find(t => t.id === q.topic_id)?.name || 'No Topic'}
+                                                {allTopics.find(t => t.id === q.topic_id)?.name || 'No Topic'}
                                             </span>
                                         </div>
                                     </td>
@@ -615,11 +802,22 @@ export default function QuestionFactory() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
+                                        {/* FIX 4: wired edit/delete buttons */}
                                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Button variant="outline" size="icon" className="w-8 h-8 rounded-none border-2 border-slate-900 hover:bg-slate-900 hover:text-white">
+                                            <Button 
+                                              onClick={() => handleEditQuestion(q)}
+                                              variant="outline" 
+                                              size="icon" 
+                                              className="w-8 h-8 rounded-none border-2 border-slate-900 hover:bg-slate-900 hover:text-white"
+                                            >
                                                 <Edit2 className="w-3.5 h-3.5" />
                                             </Button>
-                                            <Button variant="outline" size="icon" className="w-8 h-8 rounded-none border-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white">
+                                            <Button 
+                                              onClick={() => handleDeleteQuestion(q.id)}
+                                              variant="outline" 
+                                              size="icon" 
+                                              className="w-8 h-8 rounded-none border-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white"
+                                            >
                                                 <Trash2 className="w-3.5 h-3.5" />
                                             </Button>
                                         </div>
@@ -629,12 +827,30 @@ export default function QuestionFactory() {
                         </tbody>
                     </table>
                 </div>
+                {/* FIX 6: Wired Pagination UI Controls */}
                 <div className="p-4 bg-slate-50 border-t-2 border-slate-900 flex items-center justify-between">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">End of archival sequence // protocol 0.9</p>
                     <div className="flex items-center gap-2">
                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-4">Node: AIS-EURO-W3</span>
-                         <Button variant="outline" className="h-8 rounded-none border-2 border-slate-900 text-[10px] font-black uppercase px-4">Prev</Button>
-                         <Button variant="outline" className="h-8 rounded-none border-2 border-slate-900 text-[10px] font-black uppercase px-4">Next</Button>
+                         <Button 
+                           variant="outline" 
+                           disabled={currentPage === 1}
+                           onClick={() => setCurrentPage(p => p - 1)}
+                           className="h-8 rounded-none border-2 border-slate-900 text-[10px] font-black uppercase px-4 disabled:opacity-30"
+                         >
+                           Prev
+                         </Button>
+                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mx-2">
+                           {currentPage} / {totalPages}
+                         </span>
+                         <Button 
+                           variant="outline" 
+                           disabled={currentPage === totalPages}
+                           onClick={() => setCurrentPage(p => p + 1)}
+                           className="h-8 rounded-none border-2 border-slate-900 text-[10px] font-black uppercase px-4 disabled:opacity-30"
+                         >
+                           Next
+                         </Button>
                     </div>
                 </div>
              </Card>

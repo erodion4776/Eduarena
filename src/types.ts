@@ -17,5 +17,5 @@ export interface ALOCQuestion {
 
 export interface TutorResponse {
   answer: string;
-  provider: 'gemini' | 'groq' | 'huggingface' | 'fallback';
+  provider: 'gemini' | 'groq' | 'huggingface' | 'fallback' | 'validation';
 }

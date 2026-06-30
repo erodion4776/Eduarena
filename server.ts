@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,17 +18,36 @@ const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || "eduarena-secret-key-123";
 const DB_FILE = path.join(__dirname, "db.json");
 
+const SUBJECT_ID_MAP: Record<string, string> = {
+  "Mathematics": "s1",
+  "Biology":     "s2",
+  "Physics":     "s3",
+  "Chemistry":   "s4",
+  "English":     "s5",
+  "Government":  "s6",
+};
+
+const TOPIC_ID_MAP: Record<string, string> = {
+  "Mathematics": "t2", // Calculus
+  "Biology":     "t1", // Photosynthesis
+  "Physics":     "t3", // Mechanics
+  "Chemistry":   "t5", // Acids and Bases
+  "English":     "t7", // Lexis and Structure
+  "Government":  "t6", // Constitutional Development
+};
+
 // Load hardcoded questions
 const hardcodedQuestionsRaw = JSON.parse(fs.readFileSync(path.join(__dirname, "src/data/questions.json"), "utf8"));
 const hardcodedQuestions = hardcodedQuestionsRaw.map((q: any) => {
     const questionText = q.question.replace(/<[^>]*>?/gm, '');
+    const subject = q.subject || "English";
     return {
         id: `hc-${q.id}`,
         exam_type: q.examtype?.toUpperCase() || "JAMB",
         year: parseInt(q.examyear) || 2024,
-        subject_id: q.subject === "Biology" ? "s2" : "s5", 
-        topic_id: q.subject === "Biology" ? "t1" : "t7",
-        subject: q.subject, // Used for direct filtering in /api/questions
+        subject_id: SUBJECT_ID_MAP[subject] ?? "s5", 
+        topic_id: TOPIC_ID_MAP[subject] ?? "t7",
+        subject: subject, // Used for direct filtering in /api/questions
         question_content: questionText,
         question_text: questionText,
         options: {
@@ -255,25 +275,37 @@ const initialDb = {
 };
 
 // Load or initialize DB
-if (!fs.existsSync(DB_FILE)) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2));
-}
+let _dbCache: any = null;
 
 function getDb() {
-  const db = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-  // Migration: Ensure all fields from initialDb exist
-  let modified = false;
-  Object.keys(initialDb).forEach(key => {
-    if (db[key] === undefined) {
-      db[key] = (initialDb as any)[key];
-      modified = true;
+  if (!_dbCache) {
+    if (!fs.existsSync(DB_FILE)) {
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2));
     }
-  });
-  if (modified) saveDb(db);
-  return db;
+    try {
+      _dbCache = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
+    } catch (e) {
+      console.error("Failed to parse db.json, resetting to initialDb", e);
+      _dbCache = JSON.parse(JSON.stringify(initialDb));
+      fs.writeFileSync(DB_FILE, JSON.stringify(_dbCache, null, 2));
+    }
+    // Migration: Ensure all fields from initialDb exist
+    let modified = false;
+    Object.keys(initialDb).forEach(key => {
+      if (_dbCache[key] === undefined) {
+        _dbCache[key] = JSON.parse(JSON.stringify((initialDb as any)[key]));
+        modified = true;
+      }
+    });
+    if (modified) {
+      fs.writeFileSync(DB_FILE, JSON.stringify(_dbCache, null, 2));
+    }
+  }
+  return _dbCache;
 }
 
 function saveDb(db: any) {
+  _dbCache = db;
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
@@ -296,17 +328,30 @@ async function startServer() {
   // --- Auth Routes ---
   app.post("/api/auth/signup", async (req, res) => {
     const { name, email, password, school_id, role } = req.body;
-    const db = getDb();
     
+    if (!name?.trim() || !email?.trim() || !password?.trim()) {
+      return res.status(400).json({ error: "Name, email, and password are required" });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: "Invalid email format" });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    }
+
+    const db = getDb();
     if (db.users.find((u: any) => u.email === email)) {
       return res.status(400).json({ error: "User already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = {
-      id: Math.random().toString(36).substr(2, 9),
-      name,
-      email,
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      email: email.trim(),
       password: hashedPassword,
       school_id,
       role: role || "student",
@@ -321,13 +366,22 @@ async function startServer() {
     db.users.push(newUser);
     saveDb(db);
 
-    const token = jwt.sign({ userId: newUser.id, role: newUser.role }, JWT_SECRET);
-    res.cookie("token", token, { httpOnly: true });
-    res.json({ user: { id: newUser.id, name, email, role: newUser.role, points: 0, level: 1 } });
+    const token = jwt.sign({ userId: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: "7d" });
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in ms
+    });
+    res.json({ user: { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role, points: 0, level: 1 } });
   });
 
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+
     const db = getDb();
     const user = db.users.find((u: any) => u.email === email);
 
@@ -335,8 +389,13 @@ async function startServer() {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET);
-    res.cookie("token", token, { httpOnly: true });
+    const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in ms
+    });
     res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, points: user.points, level: user.level } });
   });
 
@@ -360,6 +419,27 @@ async function startServer() {
     res.clearCookie("token");
     res.json({ success: true });
   });
+
+  // --- Auth Middlewares ---
+  function requireAuth(req: any, res: any, next: any) {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      req.user = jwt.verify(token, JWT_SECRET) as any;
+      next();
+    } catch {
+      res.status(401).json({ error: "Invalid token" });
+    }
+  }
+
+  function requireAdmin(req: any, res: any, next: any) {
+    requireAuth(req, res, () => {
+      if (req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      next();
+    });
+  }
 
   // --- AI Context Search ---
   app.get("/api/ai/query", (req, res) => {
@@ -460,12 +540,12 @@ Return JSON of this exact shape:
 }`;
 
         const genResponse = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-1.5-flash",
           contents: prompt
         });
 
         const text = genResponse.text || "";
-        const cleanText = text.replace(/```json/i, "").replace(/```/g, "").trim();
+        const cleanText = text.replace(/^```(?:json)?\s*/im, "").replace(/\s*```\s*$/im, "").trim();
         const parsedQuestion = JSON.parse(cleanText);
         
         parsedQuestion.examType = parsedQuestion.examType || chosenType.toUpperCase();
@@ -939,12 +1019,12 @@ Return JSON of this exact shape:
   });
 
   // Admin Factory Endpoints
-  app.get("/api/admin/subjects", (req, res) => {
+  app.get("/api/admin/subjects", requireAdmin, (req, res) => {
     const db = getDb();
     res.json(db.subjects);
   });
 
-  app.post("/api/admin/subjects", (req, res) => {
+  app.post("/api/admin/subjects", requireAdmin, (req, res) => {
     const { name, category } = req.body;
     const db = getDb();
     if (db.subjects.find((s: any) => s.name.toLowerCase() === name.toLowerCase())) {
@@ -956,7 +1036,7 @@ Return JSON of this exact shape:
     res.json(newSubject);
   });
 
-  app.post("/api/admin/topics", (req, res) => {
+  app.post("/api/admin/topics", requireAdmin, (req, res) => {
     const { subject_id, name, syllabus_description } = req.body;
     const db = getDb();
     if (db.topics.find((t: any) => t.subject_id === subject_id && t.name.toLowerCase() === name.toLowerCase())) {
@@ -968,7 +1048,7 @@ Return JSON of this exact shape:
     res.json(newTopic);
   });
 
-  app.get("/api/admin/questions", (req, res) => {
+  app.get("/api/admin/questions", requireAdmin, (req, res) => {
     const { exam_type, year, subject_id, topic_id, search, page = "1", limit = "50" } = req.query;
     const db = getDb();
     let filtered = db.pastQuestions;
@@ -992,7 +1072,7 @@ Return JSON of this exact shape:
     });
   });
 
-  app.post("/api/admin/questions", (req, res) => {
+  app.post("/api/admin/questions", requireAdmin, (req, res) => {
     const questionData = req.body;
     const db = getDb();
 
@@ -1008,7 +1088,7 @@ Return JSON of this exact shape:
     }
 
     const newQuestion = {
-      id: `pq-${Date.now()}`,
+      id: `pq-${crypto.randomUUID()}`,
       ...questionData,
       year: Number(questionData.year),
       difficulty_level: Number(questionData.difficulty_level || 5),
@@ -1020,7 +1100,7 @@ Return JSON of this exact shape:
     res.json({ success: true, question: newQuestion });
   });
 
-  app.put("/api/admin/questions/:id", (req, res) => {
+  app.put("/api/admin/questions/:id", requireAdmin, (req, res) => {
     const { id } = req.params;
     const updatedData = req.body;
     const db = getDb();
@@ -1032,7 +1112,7 @@ Return JSON of this exact shape:
     res.json({ success: true, question: db.pastQuestions[index] });
   });
 
-  app.delete("/api/admin/questions/:id", (req, res) => {
+  app.delete("/api/admin/questions/:id", requireAdmin, (req, res) => {
     const { id } = req.params;
     const db = getDb();
     db.pastQuestions = db.pastQuestions.filter((q: any) => q.id !== id);
@@ -1165,7 +1245,7 @@ Rules:
 
       const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-1.5-flash",
         contents,
         config: {
           systemInstruction
@@ -1212,7 +1292,7 @@ Rules:
       Return the list of notifications matching the required schema. Ensure the action_links map properly to UI routes (e.g. "/tutor", "/practice", "/planner", "/leaderboard", "/arena", "/performance").`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-1.5-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1292,47 +1372,51 @@ Rules:
   });
 
   app.post("/api/practice/ai-tutor", async (req, res) => {
-    const { question_text, correct_answer, type, options } = req.body;
-    
-    // 1. Create a hash of the question (simple approach)
-    const crypto = await import('crypto');
-    const questionHash = crypto.createHash('sha256').update(question_text).digest('hex');
+    try {
+      const { question_text, correct_answer, type, options } = req.body;
+      
+      // 1. Create a hash of the question (simple approach) using top-level crypto
+      const questionHash = crypto.createHash('sha256').update(question_text || "").digest('hex');
 
-    // 2. Check local DB/Cache (Mocking Supabase check)                
-    const db = getDb();
-    const cachedResponse = db.ai_cache?.find((c: any) => c.question_hash === questionHash && c.response_type === type);                
+      // 2. Check local DB/Cache (Mocking Supabase check)                
+      const db = getDb();
+      const cachedResponse = db.ai_cache?.find((c: any) => c.question_hash === questionHash && c.response_type === type);                
 
-    if (cachedResponse) {
-      return res.json({ response: cachedResponse.response_text, cached: true });
+      if (cachedResponse) {
+        return res.json({ response: cachedResponse.response_text, cached: true });
+      }
+
+      // 3. Call AI
+      const geminiApiKey = process.env.GEMINI_API_KEY;
+      if (!geminiApiKey) return res.status(500).json({ error: "AI service unavailable" });
+
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      
+      let prompt = "";
+      if (type === 'hint') {
+        prompt = `Provide a subtle 1-sentence clue for this question: "${question_text}" without giving the answer.`;
+      } else {
+        prompt = `Provide a 3-step explanation for this question: "${question_text}". Explicitly explain why the other options (Options: ${JSON.stringify(options || [])}) are wrong. Correct answer: ${correct_answer}.`;
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: prompt,
+      });
+      
+      const aiText = response.text || "";
+
+      // 4. Save to DB/Cache (TODO: Sync to Supabase)
+      const newCache = { question_hash: questionHash, response_type: type, response_text: aiText };
+      db.ai_cache = db.ai_cache || [];
+      db.ai_cache.push(newCache);
+      saveDb(db);
+
+      res.json({ response: aiText, cached: false });
+    } catch (err: any) {
+      console.error("Practice AI Tutor failed:", err);
+      res.status(500).json({ error: "Failed to generate tutor assistance" });
     }
-
-    // 3. Call AI
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!geminiApiKey) return res.status(500).json({ error: "AI service unavailable" });
-
-    const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
-    
-    let prompt = "";
-    if (type === 'hint') {
-      prompt = `Provide a subtle 1-sentence clue for this question: "${question_text}" without giving the answer.`;
-    } else {
-      prompt = `Provide a 3-step explanation for this question: "${question_text}". Explicitly explain why the other options (Options: ${JSON.stringify(options)}) are wrong. Correct answer: ${correct_answer}.`;
-    }
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-    });
-    
-    const aiText = response.text || "";
-
-    // 4. Save to DB/Cache (TODO: Sync to Supabase)
-    const newCache = { question_hash: questionHash, response_type: type, response_text: aiText };
-    db.ai_cache = db.ai_cache || [];
-    db.ai_cache.push(newCache);
-    saveDb(db);
-
-    res.json({ response: aiText, cached: false });
   });
 
   app.post("/api/practice/ai/explain", async (req, res) => {
@@ -1340,7 +1424,6 @@ Rules:
       const { question, options, userAnswer, type } = req.body;
       const db = getDb();
       
-      const crypto = await import('crypto');
       const questionHash = crypto.createHash('sha256').update(question || "").digest('hex');
       const cacheKey = `${questionHash}_explain_${userAnswer || 'status'}`;
       
@@ -1360,13 +1443,13 @@ Rules:
 The user just answered a past-exam question. The user's status for this answer is: "${userAnswer}".
 Question: "${question}"
 Options: ${JSON.stringify(options)}
-
+ 
 Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sentences max) analyzing why the correct option is chemically/biologically/mathematically correct and why the alternatives are incorrect. Focus on standard curriculum topics. Use clear, encouraging, and highly academic display language.`;
 
       let textContent = "";
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-1.5-flash",
           contents: prompt,
         });
         textContent = response.text || "";
@@ -1443,13 +1526,13 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
   });
 
   // Admin Import Pipeline
-  app.post("/api/admin/import", (req, res) => {
+  app.post("/api/admin/import", requireAdmin, (req, res) => {
     const { type, data } = req.body; // type: 'json' | 'csv-sim'
     const db = getDb();
     
     if (type === 'questions') {
       const newQuestions = data.map((item: any) => ({
-        id: `pq-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `pq-${crypto.randomUUID()}`,
         ...item,
         created_at: new Date().toISOString()
       }));
@@ -1467,7 +1550,7 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
   });
 
   // AI-OCR Hook Simulator
-  app.post("/api/admin/ocr-ingest", (req, res) => {
+  app.post("/api/admin/ocr-ingest", requireAdmin, (req, res) => {
     const { structured_payload } = req.body;
     // structured_payload would be from Vision AI conversion
     const db = getDb();
@@ -1477,14 +1560,15 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
       structured_payload.difficulty_level = Math.floor(Math.random() * 10) + 1;
     }
 
+    const newId = `pq-ocr-${crypto.randomUUID()}`;
     db.pastQuestions.push({
-      id: `pq-ocr-${Date.now()}`,
+      id: newId,
       ...structured_payload,
       created_at: new Date().toISOString()
     });
 
     saveDb(db);
-    res.json({ success: true, id: structured_payload.id });
+    res.json({ success: true, id: newId });
   });
 
   app.get("/api/oracle/search", (req, res) => {
@@ -1652,33 +1736,20 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
   });
 
   // --- Socket.io Logic (Arena) ---
-  io.on('connection', (socket) => {
-    console.log('User connected for Battle:', socket.id);
-
-    socket.on('join_battle', (data) => {
-      const { roomId, userId } = data;
-      socket.join(roomId);
-      console.log(`User ${userId} joined battle room ${roomId}`);
-      io.to(roomId).emit('user_joined', { userId });
-    });
-
-    socket.on('submit_battle_answer', (data) => {
-        const { roomId, userId, answer, isCorrect } = data;
-        // In real app, calculate scores or update database here
-        io.to(roomId).emit('battle_update', { userId, isCorrect, score: isCorrect ? 10 : 0 });
-    });
-
-    socket.on('disconnect', () => {
-      console.log('User disconnected:', socket.id);
-    });
-  });
-
   const activeBattles = new Map();
   const matchmakingQueue = new Map(); // level -> socketId
   const userSocketMap = new Map(); // userId -> socketId
 
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
+
+    // Join battle room (legacy or general)
+    socket.on('join_battle', (data) => {
+      const { roomId, userId } = data;
+      socket.join(roomId);
+      console.log(`User ${userId} joined battle room ${roomId}`);
+      io.to(roomId).emit('user_joined', { userId });
+    });
 
     socket.on("register_user", (userId) => {
       userSocketMap.set(userId, socket.id);
@@ -1691,7 +1762,7 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
       if (targetSocketId) {
         io.to(targetSocketId).emit("battle_invite", { 
           fromUser, 
-          battleId: Math.random().toString(36).substr(2, 9),
+          battleId: crypto.randomUUID(),
           battleSource: battleSource || "General" 
         });
       }
@@ -1739,7 +1810,7 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
         questions: battleRoom.questions
       });
 
-      // AI Logic: Answers every 5 seconds
+      // AI Logic: Answers every 5.5 seconds
       let qIndex = 0;
       const aiInterval = setInterval(() => {
         const room = activeBattles.get(battleId);
@@ -1819,12 +1890,21 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
       });
     });
 
-    socket.on("submit_battle_answer", ({ battleId, questionIndex, answer }) => {
+    socket.on("submit_battle_answer", (data) => {
+      // Legacy compatibility check for roomId vs battleId
+      if (data.roomId) {
+        const { roomId, userId, answer, isCorrect } = data;
+        io.to(roomId).emit('battle_update', { userId, isCorrect, score: isCorrect ? 10 : 0 });
+        return;
+      }
+
+      const { battleId, questionIndex, answer } = data;
       const battle = activeBattles.get(battleId);
       if (!battle || battle.status !== 'active') return;
 
       const question = battle.fullQuestions[questionIndex];
-      const isCorrect = question.correct_answer === answer;
+      const correctOption = question.correct_option ?? question.correct_answer ?? "";
+      const isCorrect = String(correctOption).toUpperCase() === String(answer).toUpperCase();
       const timestamp = Date.now();
       const userId = (socket as any).userId;
 
@@ -1892,7 +1972,7 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
 
     // --- School Derby Logic ---
     socket.on("admin_start_derby", ({ schoolA, schoolB }) => {
-      const battleId = `derby_${Date.now()}`;
+      const battleId = `derby_${crypto.randomUUID()}`;
       const db = getDb();
       const questions = db.questions.sort(() => 0.5 - Math.random()).slice(0, 15);
 
@@ -1918,7 +1998,8 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
       if (!derby || derby.status !== 'active' || derby.currentQuestionIndex !== questionIndex) return;
 
       const question = derby.questions[questionIndex];
-      if (question.correct_answer === answer) {
+      const correctOption = question.correct_option ?? question.correct_answer ?? "";
+      if (String(correctOption).toUpperCase() === String(answer).toUpperCase()) {
         // Fastest finger wins
         const school = derby.schools.find((s: any) => s.id === schoolId);
         if (school) school.score += 1;

@@ -308,9 +308,28 @@ Object.defineProperty(window, 'fetch', {
       }
 
       if (url.startsWith('/api/admin/questions')) {
+        const cleanPath = url.split('?')[0];
+        const pathParts = cleanPath.split('/');
+        const qId = pathParts.length > 4 ? pathParts[4] : null;
+
+        if (init?.method === 'DELETE' && qId) {
+          db.questions = db.questions.filter((q: any) => q.id !== qId);
+          saveDb();
+          return jsonResponse({ success: true });
+        }
+        if (init?.method === 'PUT' && qId) {
+          const body = JSON.parse(init.body as string);
+          const index = db.questions.findIndex((q: any) => q.id === qId);
+          if (index !== -1) {
+            db.questions[index] = { ...db.questions[index], ...body, year: Number(body.year) };
+            saveDb();
+            return jsonResponse({ success: true, question: db.questions[index] });
+          }
+          return jsonResponse({ error: "Question not found" }, 404);
+        }
         if (init?.method === 'POST') {
           const body = JSON.parse(init.body as string);
-          const q = { ...body, id: Date.now().toString() };
+          const q = { ...body, id: `pq-${Date.now().toString()}` };
           db.questions.push(q);
           saveDb();
           return jsonResponse(q);
