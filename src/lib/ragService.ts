@@ -566,59 +566,36 @@ export const ragService = {
   ): Promise<void> {
     if (!supabase) throw new Error('Supabase client not initialised.');
 
-    // Print the registry so the admin can confirm what's loaded
-    onProgress('📋 SUBJECT REGISTRY:');
-    Object.entries(SUBJECT_ID).forEach(([slug, uuid]) => {
-      onProgress(`   "${slug}" → ${uuid}`);
+    // ── DEBUG: Show exactly what the first 3 rows look like ───────
+    onProgress('🔬 DEBUG — RAW DATA SAMPLE:');
+    data.slice(0, 3).forEach((row, i) => {
+      onProgress(`  Row ${i + 1} keys: ${Object.keys(row).join(', ')}`);
+      onProgress(`  Row ${i + 1} subject_name: "${row.subject_name ?? 'MISSING'}"`);
+      onProgress(`  Row ${i + 1} subject:      "${row.subject      ?? 'MISSING'}"`);
+      onProgress(`  Row ${i + 1} Subject:      "${row.Subject      ?? 'MISSING'}"`);
+      onProgress(`  Row ${i + 1} topic_name:   "${row.topic_name   ?? 'MISSING'}"`);
+      onProgress(`  Row ${i + 1} topic:        "${row.topic        ?? 'MISSING'}"`);
+      onProgress(`  Row ${i + 1} exam_type:    "${row.exam_type    ?? 'MISSING'}"`);
+      onProgress('  ---');
     });
 
-    onProgress('📋 TOPIC REGISTRY:');
-    Object.entries(TOPIC_ID).forEach(([slug, uuid]) => {
-      onProgress(`   "${slug}" → ${uuid}`);
-    });
+    // ── DEBUG: Show every unique subject value in the dataset ──────
+    const uniqueSubjects = [...new Set(data.map(r =>
+      r.subject_name ?? r.subject ?? r.Subject ?? '[EMPTY]'
+    ))];
+    onProgress(`🔬 UNIQUE SUBJECT VALUES (${uniqueSubjects.length}):`);
+    uniqueSubjects.forEach(s => onProgress(`  → "${s}"`));
 
-    onProgress(`\n📦 RECEIVED ${data.length} RECORDS — BUILDING ROWS...`);
+    // ── DEBUG: Show every unique topic value in the dataset ────────
+    const uniqueTopics = [...new Set(data.map(r =>
+      r.topic_name ?? r.topic ?? r.Topic ?? '[EMPTY]'
+    ))];
+    onProgress(`🔬 UNIQUE TOPIC VALUES (${uniqueTopics.length}):`);
+    uniqueTopics.forEach(t => onProgress(`  → "${t}"`));
 
-    // ── Step 1: Build all rows (synchronous — no DB calls) ────────
-    const validRows: QuestionRow[] = [];
-    let   skipped = 0;
-
-    for (let i = 0; i < data.length; i++) {
-      if (i > 0 && i % 100 === 0) {
-        onProgress(`🔍 Processed ${i}/${data.length} rows...`);
-      }
-
-      const row = buildQuestionRow(data[i], i, onProgress);
-      if (row) {
-        validRows.push(row);
-      } else {
-        skipped++;
-      }
-    }
-
-    onProgress(
-      `\n✅ ${validRows.length} VALID  |  ⚠️  ${skipped} SKIPPED`
-    );
-
-    if (validRows.length === 0) {
-      onProgress('❌ No valid records to import. Aborting.');
-      return;
-    }
-
-    // ── Step 2: Batch insert ───────────────────────────────────────
-    const { inserted, failed } = await batchInsertQuestions(
-      validRows,
-      onProgress
-    );
-
-    // ── Step 3: Summary ────────────────────────────────────────────
-    if (failed === 0) {
-      onProgress(`\n🎉 IMPORT COMPLETE — ${inserted} questions saved.`);
-    } else {
-      onProgress(
-        `\n⚠️  PARTIAL IMPORT — ${inserted} saved, ${failed} failed.`
-      );
-    }
+    // Stop here — don't actually import yet
+    onProgress('🔬 DEBUG COMPLETE — no data was inserted.');
+    onProgress('📋 Copy the output above and share it.');
   },
 
   // ─── Context Retrieval ────────────────────────────────────────
