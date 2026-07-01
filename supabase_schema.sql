@@ -149,3 +149,41 @@ create policy "Allow public update" on public.global_questions_vault for update 
 
 create index if not exists idx_subject on public.global_questions_vault(subject);
 create index if not exists idx_exam_type on public.global_questions_vault(exam_type);
+
+-- 12. Exam Sessions Table
+create table if not exists public.exam_sessions (
+  id uuid default gen_random_uuid() primary key,
+  user_id text not null, -- Stores user_id (text/uuid string from useAuthStore)
+  exam_type text not null,
+  score integer not null,
+  total_questions integer not null,
+  score_percent integer not null,
+  xp_earned integer default 0,
+  duration_seconds integer,
+  is_submitted boolean default false,
+  submitted_at timestamp with time zone,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 13. Session Subject Results Table (Breakdown per subject)
+create table if not exists public.session_subject_results (
+  id uuid default gen_random_uuid() primary key,
+  session_id uuid references public.exam_sessions(id) on delete cascade not null,
+  user_id text not null,
+  subject_name text not null,
+  correct_answers integer not null,
+  total_questions integer not null,
+  score_percent integer not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- RLS for Exam Sessions
+alter table public.exam_sessions enable row level security;
+alter table public.session_subject_results enable row level security;
+
+drop policy if exists "Allow public access to exam_sessions" on public.exam_sessions;
+create policy "Allow public access to exam_sessions" on public.exam_sessions for all using (true);
+
+drop policy if exists "Allow public access to session_subject_results" on public.session_subject_results;
+create policy "Allow public access to session_subject_results" on public.session_subject_results for all using (true);
+

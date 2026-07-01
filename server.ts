@@ -1365,6 +1365,11 @@ Rules:
     res.json({ success: true, resultId: resultEntry.id });
   });
 
+  app.get("/api/practice/session/results", (req, res) => {
+    const db = getDb();
+    res.json({ results: db.practiceResults || [] });
+  });
+
   // --- Practice Page Routes ---
   app.post("/api/practice/session/start", async (req, res) => {
     // In a real app, this would save session to Supabase

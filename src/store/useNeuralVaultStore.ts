@@ -22,6 +22,7 @@ export interface NeuralVaultSession {
   userAnswers: Record<string, string>; // key: string(questionId) -> chosenOption ('a', 'b', etc)
   score: number;
   xpEarned: number;
+  topicContext?: any;
 }
 
 interface NeuralVaultState {
@@ -31,6 +32,7 @@ interface NeuralVaultState {
     examType: string;
     selectedSubjects: string[];
     durationMinutes: number;
+    topicContext?: any;
   }) => Promise<void>;
   answerQuestion: (questionId: string | number, answer: string) => void;
   setCurrentIndex: (subjectIndex: number, idx: number) => void;
@@ -79,7 +81,7 @@ export const useNeuralVaultStore = create<NeuralVaultState>((set, get) => ({
   currentSession: null,
   isLoading: false,
 
-  initiateSession: async ({ examType, selectedSubjects, durationMinutes }) => {
+  initiateSession: async ({ examType, selectedSubjects, durationMinutes, topicContext }) => {
     set({ isLoading: true });
     logger.info(`Neural Link activating for ${selectedSubjects.length} subjects.`);
     
@@ -162,7 +164,8 @@ export const useNeuralVaultStore = create<NeuralVaultState>((set, get) => ({
       isMultiSubject: selectedSubjects.length > 1,
       userAnswers: {},
       score: 0,
-      xpEarned: 0
+      xpEarned: 0,
+      topicContext: topicContext || null
     };
 
     localStorage.setItem('NEURAL_VAULT_ACTIVE_SESSION', JSON.stringify(newSession));
