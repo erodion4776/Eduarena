@@ -97,11 +97,11 @@ export const alocIngestionService = {
       );
     }
 
-    // 1. Duplicate check
+    // 1. Duplicate check in global_questions_vault
     const { data: existing, error: checkErr } = await supabase
-      .from('questions')
-      .select('id, source_id')
-      .eq('source_id', record.id)
+      .from('global_questions_vault')
+      .select('id')
+      .eq('id', record.id)
       .maybeSingle();
 
     if (checkErr) throw checkErr;
@@ -127,26 +127,72 @@ export const alocIngestionService = {
     // 4. Generate embedding vector
     const vectorData = await this.generateEmbedding(textToEmbed);
 
-    // 5. Upsert — idempotent on source_id conflict
+    // 5. Upsert to global_questions_vault
     const { error: insertErr } = await supabase
-      .from('questions')
+      .from('global_questions_vault')
       .upsert(
         {
-          source_id:      record.id,
+          id:             record.id,
           subject:        (record.subject  ?? subject).toLowerCase(),
           exam_type:      (record.examtype ?? examType).toLowerCase(),
-          year:           parseInt(record.examyear, 10) || 0, // ✅ radix 10
-          question_text:  record.question,
-          options:        rebuiltOptions,
-          correct_answer: record.answer ?? 'a',
-          explanation:    record.solution ?? '',
-          topic:          record.section  ?? 'General',
-          embedding:      vectorData,
+          question_data:  { ...record, subject: record.subject ?? subject, examType: record.examtype ?? examType, embedding: vectorData },
         },
-        { onConflict: 'source_id' }
+        { onConflict: 'id' }
       );
 
     if (insertErr) throw insertErr;
+
+    // 6. Graceful Sync to standard questions table
+    try {
+      let subject_id = null;
+      let topic_id = null;
+
+      const { data: existingSubjects } = await supabase.from('subjects').select('id, name');
+      const sName = (record.subject ?? subject).toLowerCase().trim();
+      let subjectRow = existingSubjects?.find((s: any) => s.name.toLowerCase().trim() === sName);
+      
+      if (subjectRow) {
+        subject_id = subjectRow.id;
+      } else {
+        const { data: newSub } = await supabase.from('subjects').insert({ name: record.subject ?? subject }).select().single();
+        subject_id = newSub?.id;
+      }
+
+      if (subject_id) {
+        const { data: existingTopics } = await supabase.from('topics').select('id, name').eq('subject_id', subject_id);
+        const tName = (record.section || 'General').toLowerCase().trim();
+        let topicRow = existingTopics?.find((t: any) => t.name.toLowerCase().trim() === tName);
+        
+        if (topicRow) {
+          topic_id = topicRow.id;
+        } else {
+          const { data: newTop } = await supabase.from('topics').insert({ name: record.section || 'General', subject_id }).select().single();
+          topic_id = newTop?.id;
+        }
+      }
+
+      if (subject_id && topic_id) {
+        const optionsArray = [
+          record.option?.a ?? '',
+          record.option?.b ?? '',
+          record.option?.c ?? '',
+          record.option?.d ?? '',
+          ...(record.option?.e ? [record.option.e] : []),
+        ].filter(Boolean);
+
+        await supabase.from('questions').insert({
+          subject_id,
+          topic_id,
+          question_content: questionText,
+          options: optionsArray,
+          correct_answer: record.answer ?? 'a',
+          explanation: record.solution ?? '',
+          year: parseInt(record.examyear, 10) || 0,
+        });
+      }
+    } catch (stdSyncErr) {
+      console.warn("Standard CBT questions mapping skipped or failed:", stdSyncErr);
+    }
 
     return { status: 'success', id: record.id };
   },

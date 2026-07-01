@@ -264,17 +264,12 @@ export default function DataHarvester() {
                      ...(q.option?.e ? { e: q.option.e } : {})
                   };
 
-                  const { error: fallbackError } = await supabase.from('questions').upsert({
-                     source_id: q.id,
+                  const { error: fallbackError } = await supabase.from('global_questions_vault').upsert({
+                     id: q.id,
                      subject: currentSub.toLowerCase(),
                      exam_type: exam.toLowerCase(),
-                     year: parseInt(q.examyear, 10) || 0,
-                     question_text: q.question,
-                     options: rebuiltOptions,
-                     correct_answer: q.answer ?? 'a',
-                     explanation: q.solution || '',
-                     topic: q.section ?? 'General'
-                  }, { onConflict: 'source_id' });
+                     question_data: q
+                  }, { onConflict: 'id' });
 
                   if (fallbackError) {
                      addLog(`CLOUD_SYNC_FAIL [${q.id}]: ${fallbackError.message}`, 'error');
@@ -286,7 +281,7 @@ export default function DataHarvester() {
 
             // Local DB Sync
             db.run(`INSERT INTO questions (aloc_id, subject, question_text, option_a, option_b, option_c, option_d, answer, explanation, image_url, exam_year) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, 
-               [q.id, currentSub, q.question, q.option.a, q.option.b, q.option.c, q.option.d, q.answer, q.solution || '', cloudImageUrl || q.image || '', q.examyear]);
+               [q.id, currentSub, q.question, q.option?.a ?? '', q.option?.b ?? '', q.option?.c ?? '', q.option?.d ?? '', q.answer, q.solution || '', cloudImageUrl || q.image || '', q.examyear]);
 
             successCount++;
             if (successCount % 5 === 0) addLog(`COMMITTED: ${successCount} NODES [${currentSub}]`, 'success');

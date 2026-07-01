@@ -1525,6 +1525,33 @@ Provide a concise, extremely high-fidelity syllabus-aligned explanation (2-3 sen
     });
   });
 
+  // Admin Embeddings Generation Route
+  app.post("/api/admin/embeddings", requireAdmin, async (req, res) => {
+    try {
+      const { text } = req.body;
+      if (!text) {
+        return res.status(400).json({ error: "Text to embed is required" });
+      }
+      const geminiApiKey = process.env.GEMINI_API_KEY;
+      if (!geminiApiKey) {
+        return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server" });
+      }
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      const embeddingResult = await ai.models.embedContent({
+        model: "text-embedding-004",
+        contents: text,
+      });
+      const embedding = embeddingResult?.embeddings?.[0]?.values ?? (embeddingResult as any)?.embedding?.values;
+      if (!embedding) {
+        return res.status(500).json({ error: "Empty or invalid embedding returned from Gemini" });
+      }
+      res.json({ embedding });
+    } catch (err: any) {
+      console.error("Embedding generation error:", err);
+      res.status(500).json({ error: err.message || "Failed to generate embedding" });
+    }
+  });
+
   // Admin Import Pipeline
   app.post("/api/admin/import", requireAdmin, (req, res) => {
     const { type, data } = req.body; // type: 'json' | 'csv-sim'
