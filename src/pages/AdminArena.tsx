@@ -110,14 +110,21 @@ export default function AdminArena() {
   const downloadSampleJson = () => {
     const sample = [
       {
-        "subject_name": "Biology",
-        "topic_name": "Cell Biology",
-        "question_content": "Which organelle is the powerhouse of the cell?",
-        "options": ["Nucleus", "Mitochondria", "Ribosome", "Endoplasmic Reticulum"],
-        "correct_answer": "Mitochondria",
-        "explanation": "Mitochondria generate most of the chemical energy needed to power the cell's biochemical reactions.",
-        "difficulty_level": 1,
-        "year": 1983
+        "subject_name": "English",
+        "topic_name": "Passage A",
+        "question_content": "In the passage, the author's main purpose is to?",
+        "options": [
+          "Entertain the reader",
+          "Inform about science",
+          "Persuade the audience",
+          "Describe a journey"
+        ],
+        "correct_answer": "Persuade the audience",
+        "explanation": "The author uses persuasive language throughout.",
+        "difficulty_level": 2,
+        "year": 2020,
+        "exam_type": "JAMB",
+        "aloc_id": "ENG-2020-001"
       }
     ];
     const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
