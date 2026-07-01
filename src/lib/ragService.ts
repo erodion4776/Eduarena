@@ -62,12 +62,17 @@ type TopicSlug   = keyof typeof TOPIC_ID;
 
 const SUBJECT_ALIAS: Record<string, SubjectSlug> = {
   // English
-  'english':           'english',
-  'eng':               'english',
-  'english language':  'english',
-  'use of english':    'english',
-  'use-of-english':    'english',
-  'uoe':               'english',
+  'english':                  'english',
+  'eng':                      'english',
+  'english language':         'english',
+  'use of english':           'english',
+  'use-of-english':           'english',
+  'uoe':                      'english',
+  'english studies':          'english',
+  'english lang':             'english',
+  'general english':          'english',
+  'literature in english':    'english',
+  'communication in english': 'english',
 };
 
 // ─────────────────────────────────────────────
@@ -87,7 +92,6 @@ const TOPIC_ALIAS: Record<string, TopicSlug> = {
   'comprehension a':       'passage-a',
   'comprehension-a':       'passage-a',
   'reading passage a':     'passage-a',
-  'reading-passage-a':     'passage-a',
 
   // passage-b
   'passage-b':             'passage-b',
@@ -97,7 +101,6 @@ const TOPIC_ALIAS: Record<string, TopicSlug> = {
   'comprehension b':       'passage-b',
   'comprehension-b':       'passage-b',
   'reading passage b':     'passage-b',
-  'reading-passage-b':     'passage-b',
 
   // passage-c
   'passage-c':             'passage-c',
@@ -107,15 +110,11 @@ const TOPIC_ALIAS: Record<string, TopicSlug> = {
   'comprehension c':       'passage-c',
   'comprehension-c':       'passage-c',
   'reading passage c':     'passage-c',
-  'reading-passage-c':     'passage-c',
 
   // register
   'register':              'register',
   'registers':             'register',
   'language register':     'register',
-  'language-register':     'register',
-  'registers of english':  'register',
-  'word register':         'register',
   'variety of language':   'register',
   'varieties of language': 'register',
 
@@ -136,21 +135,13 @@ const TOPIC_ALIAS: Record<string, TopicSlug> = {
   'summary':               'others',
   'essay':                 'others',
   'letter writing':        'others',
-  'letter-writing':        'others',
-  'narrative essay':       'others',
-  'expository essay':      'others',
-  'argumentative essay':   'others',
   'vocabulary':            'others',
-  'idioms':                'others',
-  'proverbs':              'others',
-  'antonyms':              'others',
-  'synonyms':              'others',
-  'word usage':            'others',
-  'word-usage':            'others',
-  'figures of speech':     'others',
-  'figures-of-speech':     'others',
-  'tenses':                'others',
   'grammar':               'others',
+  'tenses':                'others',
+  'idioms':                'others',
+  'synonyms':              'others',
+  'antonyms':              'others',
+  'figures of speech':     'others',
   '':                      'others',  // missing topic → others
 };
 
@@ -204,13 +195,60 @@ function stripHtml(html: string): string {
 }
 
 /**
+ * Cleans raw question_content from the harvester format.
+ * Removes [INSTRUCTION]:, [QUESTION]:, [SECTION/PASSAGE]: prefixes
+ * and strips all HTML tags while preserving readable text.
+ */
+function cleanQuestionContent(raw: string): string {
+  let text = raw ?? '';
+
+  // Strip HTML tags first (preserves text inside tags)
+  text = text.replace(/<[^>]*>/g, ' ');
+
+  // Remove harvester prefix tags — keep only the content after the colon
+  text = text
+    .replace(/\[SECTION\/PASSAGE\]:\s*/gi, '')
+    .replace(/\[INSTRUCTION\]:\s*/gi,      '')
+    .replace(/\[QUESTION\]:\s*/gi,         '')
+    .replace(/\[PASSAGE\]:\s*/gi,          '')
+    .replace(/\[ANSWER\]:\s*/gi,           '');
+
+  // Collapse whitespace
+  text = text
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+
+  return text;
+}
+
+/**
+ * Creates a deterministic fingerprint for duplicate detection
+ * when aloc_id is null.
+ */
+function makeFingerprint(row: {
+  subject_id:       string;
+  topic_id:         string;
+  year:             number | null;
+  question_content: string;
+}): string {
+  const normalized = stripHtml(row.question_content)
+    .toLowerCase()
+    .trim()
+    .slice(0, 120)
+    .replace(/\s+/g, ' ');
+
+  return [
+    row.subject_id,
+    row.topic_id,
+    row.year ?? 'null',
+    normalized,
+  ].join('::');
+}
+
+/**
  * Normalise any raw string for alias map lookup.
- * "Passage A"  → "passage a"   (lowercase, trimmed)
- * "REGISTER"   → "register"
- * "Lexis & Structure" → "lexis & structure"
- *
- * Deliberately keeps spaces so alias keys can use
- * natural spacing ("passage a") rather than slugs.
  */
 function normalise(raw: string): string {
   return raw.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -228,15 +266,21 @@ function lookupSubjectId(
   const key   = normalise(raw);
   const slug  = SUBJECT_ALIAS[key];
 
-  if (!slug) {
+  if (slug) return SUBJECT_ID[slug];
+
+  // Fuzzy fallback
+  if (key.includes('english') || key.includes('eng')) {
     onProgress(
-      `⚠️  SKIP row ${rowNum}: unknown subject "${raw}". ` +
-      `Known: ${Object.keys(SUBJECT_ID).join(', ')}`
+      `⚠️  Row ${rowNum}: subject "${raw}" fuzzy matched → "english"`
     );
-    return null;
+    return SUBJECT_ID['english'];
   }
 
-  return SUBJECT_ID[slug];
+  onProgress(
+    `❌ Row ${rowNum}: subject "${raw}" unresolvable. ` +
+    `Add it to SUBJECT_ALIAS.`
+  );
+  return null;
 }
 
 /**
@@ -251,9 +295,9 @@ function lookupTopicId(
   const key  = normalise(raw);
   const slug = TOPIC_ALIAS[key] ?? 'others';
 
-  if (!TOPIC_ALIAS[key]) {
+  if (!TOPIC_ALIAS[key] && raw.trim() !== '') {
     onProgress(
-      `⚠️  Row ${rowNum}: unknown topic "${raw}" → falling back to "others"`
+      `⚠️  Row ${rowNum}: topic "${raw}" unknown → "others"`
     );
   }
 
@@ -307,6 +351,58 @@ async function isDuplicateChunk(
 }
 
 // ─────────────────────────────────────────────
+// Duplicate Detection
+// ─────────────────────────────────────────────
+
+async function getExistingAlocIds(): Promise<Set<string>> {
+  if (!supabase) return new Set();
+
+  const { data, error } = await supabase
+    .from('questions')
+    .select('aloc_id')
+    .not('aloc_id', 'is', null);
+
+  if (error) {
+    console.warn('[getExistingAlocIds]', error.message);
+    return new Set();
+  }
+
+  return new Set(data.map((r: any) => String(r.aloc_id)));
+}
+
+async function getExistingFingerprints(): Promise<Set<string>> {
+  if (!supabase) return new Set();
+
+  const PAGE_SIZE = 1000;
+  const prints    = new Set<string>();
+  let   from      = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('questions')
+      .select('subject_id, topic_id, year, question_content')
+      .is('aloc_id', null)
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) {
+      console.warn('[getExistingFingerprints]', error.message);
+      break;
+    }
+
+    if (!data?.length) break;
+
+    for (const row of data) {
+      prints.add(makeFingerprint(row));
+    }
+
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return prints;
+}
+
+// ─────────────────────────────────────────────
 // Row Builder — pure, synchronous FK resolution
 // ─────────────────────────────────────────────
 
@@ -326,20 +422,25 @@ function buildQuestionRow(
     raw.topic_name ?? raw.topic ?? raw.Topic ?? ''
   ).trim();
 
-  const question_content = stripHtml(
+  // Clean question content — strips HTML + [TAG]: prefixes
+  const question_content = cleanQuestionContent(
     raw.question_content ??
     raw.question_text    ??
     raw.question         ??
     raw.Question         ??
     ''
-  ).trim();
+  );
 
+  // Options
   let options: string[] = [];
   if (Array.isArray(raw.options)) {
-    options = raw.options.map((o: any) => stripHtml(String(o)).trim());
+    options = raw.options.map((o: any) =>
+      cleanQuestionContent(String(o))
+    );
   } else if (raw.options && typeof raw.options === 'object') {
-    options = Object.values(raw.options)
-      .map((o: any) => stripHtml(String(o)).trim());
+    options = Object.values(raw.options).map((o: any) =>
+      cleanQuestionContent(String(o))
+    );
   }
 
   const correct_answer = stripHtml(
@@ -353,13 +454,9 @@ function buildQuestionRow(
   const difficulty_level = raw.difficulty_level != null ? Number(raw.difficulty_level) : null;
   const year             = raw.year             != null ? Number(raw.year)             : null;
   const exam_type        = raw.exam_type        ?? raw.examType ?? null;
-  const aloc_id          = raw.aloc_id          ?? null;
+  const aloc_id          = raw.aloc_id          != null ? String(raw.aloc_id)          : null;
 
   // ── Validate text fields ───────────────────────────────────────
-  if (!subjectRaw) {
-    onProgress(`⚠️  SKIP row ${rowNum}: missing subject_name`);
-    return null;
-  }
   if (!question_content) {
     onProgress(`⚠️  SKIP row ${rowNum}: missing question_content`);
     return null;
@@ -373,12 +470,21 @@ function buildQuestionRow(
     return null;
   }
 
-  // ── Resolve UUIDs — pure dictionary lookup, no await ──────────
-  const subject_id = lookupSubjectId(subjectRaw, onProgress, rowNum);
+  // ── Resolve UUIDs ──────────────────────────────────────────────
+
+  // If subject_id is already a UUID in the raw data, use it directly
+  const subject_id =
+    raw.subject_id && raw.subject_id.includes('-')
+      ? raw.subject_id                                         // already a UUID
+      : lookupSubjectId(subjectRaw || 'english', onProgress, rowNum);
+
   if (!subject_id) return null;
 
-  // topic_id always resolves (falls back to "others")
-  const topic_id = lookupTopicId(topicRaw, onProgress, rowNum);
+  // If topic_id is already a UUID in the raw data, use it directly
+  const topic_id =
+    raw.topic_id && raw.topic_id.includes('-')
+      ? raw.topic_id                                           // already a UUID
+      : lookupTopicId(topicRaw, onProgress, rowNum);
 
   return {
     subject_id,
@@ -389,7 +495,7 @@ function buildQuestionRow(
     explanation,
     difficulty_level,
     year,
-    subject:  subjectRaw,
+    subject:  subjectRaw || null,
     topic:    topicRaw || null,
     exam_type,
     aloc_id,
@@ -566,36 +672,106 @@ export const ragService = {
   ): Promise<void> {
     if (!supabase) throw new Error('Supabase client not initialised.');
 
-    // ── DEBUG: Show exactly what the first 3 rows look like ───────
-    onProgress('🔬 DEBUG — RAW DATA SAMPLE:');
-    data.slice(0, 3).forEach((row, i) => {
-      onProgress(`  Row ${i + 1} keys: ${Object.keys(row).join(', ')}`);
-      onProgress(`  Row ${i + 1} subject_name: "${row.subject_name ?? 'MISSING'}"`);
-      onProgress(`  Row ${i + 1} subject:      "${row.subject      ?? 'MISSING'}"`);
-      onProgress(`  Row ${i + 1} Subject:      "${row.Subject      ?? 'MISSING'}"`);
-      onProgress(`  Row ${i + 1} topic_name:   "${row.topic_name   ?? 'MISSING'}"`);
-      onProgress(`  Row ${i + 1} topic:        "${row.topic        ?? 'MISSING'}"`);
-      onProgress(`  Row ${i + 1} exam_type:    "${row.exam_type    ?? 'MISSING'}"`);
-      onProgress('  ---');
-    });
+    onProgress(`📦 RECEIVED ${data.length} RECORDS`);
 
-    // ── DEBUG: Show every unique subject value in the dataset ──────
-    const uniqueSubjects = [...new Set(data.map(r =>
-      r.subject_name ?? r.subject ?? r.Subject ?? '[EMPTY]'
-    ))];
-    onProgress(`🔬 UNIQUE SUBJECT VALUES (${uniqueSubjects.length}):`);
-    uniqueSubjects.forEach(s => onProgress(`  → "${s}"`));
+    // ── Step 1: Load both duplicate detection sets in parallel ────
+    onProgress('🔍 Loading duplicate detection indexes...');
 
-    // ── DEBUG: Show every unique topic value in the dataset ────────
-    const uniqueTopics = [...new Set(data.map(r =>
-      r.topic_name ?? r.topic ?? r.Topic ?? '[EMPTY]'
-    ))];
-    onProgress(`🔬 UNIQUE TOPIC VALUES (${uniqueTopics.length}):`);
-    uniqueTopics.forEach(t => onProgress(`  → "${t}"`));
+    const [existingAlocIds, existingFingerprints] = await Promise.all([
+      getExistingAlocIds(),
+      getExistingFingerprints(),
+    ]);
 
-    // Stop here — don't actually import yet
-    onProgress('🔬 DEBUG COMPLETE — no data was inserted.');
-    onProgress('📋 Copy the output above and share it.');
+    onProgress(
+      `📊 Index loaded: ` +
+      `${existingAlocIds.size} by aloc_id, ` +
+      `${existingFingerprints.size} by fingerprint`
+    );
+
+    // ── Step 2: Build rows + deduplicate ──────────────────────────
+    onProgress('⚙️  BUILDING ROWS...');
+
+    const validRows:  QuestionRow[] = [];
+    let   skipped   = 0;
+    let   duplicate = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      if (i > 0 && i % 100 === 0) {
+        onProgress(`🔍 Processed ${i}/${data.length}...`);
+      }
+
+      const raw    = data[i];
+      const alocId = raw.aloc_id != null ? String(raw.aloc_id) : null;
+
+      // ── Dedup by aloc_id ───────────────────────────────────────
+      if (alocId && existingAlocIds.has(alocId)) {
+        onProgress(`CLOUD_SYNC: Question [${alocId}] already exists (skipped)`);
+        duplicate++;
+        continue;
+      }
+
+      // ── Build the row ──────────────────────────────────────────
+      const row = buildQuestionRow(raw, i, onProgress);
+      if (!row) { skipped++; continue; }
+
+      // ── Dedup by content fingerprint (for null aloc_id rows) ───
+      if (!alocId) {
+        const fp = makeFingerprint(row);
+        if (existingFingerprints.has(fp)) {
+          onProgress(
+            `CLOUD_SYNC: Question [row ${i + 1}] already exists (skipped)`
+          );
+          duplicate++;
+          continue;
+        }
+        // Add to set so within-batch duplicates are also caught
+        existingFingerprints.add(fp);
+      }
+
+      validRows.push(row);
+    }
+
+    // ── Step 3: Summary ────────────────────────────────────────────
+    onProgress(
+      `\n📊 IMPORT SUMMARY:\n` +
+      `   ✅ New:        ${validRows.length}\n` +
+      `   ⏭️  Duplicate:  ${duplicate}\n` +
+      `   ⚠️  Invalid:    ${skipped}`
+    );
+
+    if (validRows.length === 0) {
+      onProgress(
+        duplicate > 0
+          ? `✅ ALL RECORDS ALREADY IN DATABASE — nothing to insert.`
+          : `❌ No valid records. Aborting.`
+      );
+      return;
+    }
+
+    // ── Step 4: Batch insert ───────────────────────────────────────
+    const { inserted, failed } = await batchInsertQuestions(
+      validRows,
+      onProgress
+    );
+
+    // ── Step 5: Final ──────────────────────────────────────────────
+    if (failed === 0) {
+      onProgress(
+        `\n🎉 IMPORT COMPLETE\n` +
+        `   Inserted:   ${inserted}\n` +
+        `   Duplicate:  ${duplicate}\n` +
+        `   Invalid:    ${skipped}\n` +
+        `   Total:      ${data.length}`
+      );
+    } else {
+      onProgress(
+        `\n⚠️  PARTIAL IMPORT\n` +
+        `   Inserted:   ${inserted}\n` +
+        `   Failed:     ${failed}\n` +
+        `   Duplicate:  ${duplicate}\n` +
+        `   Invalid:    ${skipped}`
+      );
+    }
   },
 
   // ─── Context Retrieval ────────────────────────────────────────
