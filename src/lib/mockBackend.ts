@@ -78,7 +78,7 @@ Object.defineProperty(window, 'fetch', {
         const yearQuery = parsedUrl.searchParams.get('year') || '';
 
         // 1. Try hitting the actual live ALOC API from the browser first! (In case CORS and Plan Quota are valid)
-        const ACCESS_TOKEN = 'ALOC-84eb83db941bfc4c524c';
+        const ACCESS_TOKEN = 'ALOC-b77ef1b2396263a9ee7a';
         let liveUrl = `https://questions.aloc.com.ng/api/v2/q/${countVal}?subject=${subjectQuery}&type=${typeQuery}`;
         if (yearQuery && yearQuery !== 'all' && yearQuery !== '') {
           liveUrl += `&year=${yearQuery}`;

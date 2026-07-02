@@ -33,7 +33,7 @@ function interruptibleDelay(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 export default function DataHarvester() {
-  const [token, setToken] = useState('');
+  const [token, setToken] = useState('ALOC-b77ef1b2396263a9ee7a');
   const [count, setCount] = useState(10);
   const [subject, setSubject] = useState('english, mathematics, biology, physics, chemistry');
   const [exam, setExam] = useState('jamb');

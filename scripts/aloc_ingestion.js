@@ -12,7 +12,7 @@
  *   1. Setup your .env file with the following:
  *      SUPABASE_URL="https://your-project.supabase.co"
  *      SUPABASE_SERVICE_ROLE_KEY="your-supabase-service-role-key" -- Use Service Role to bypass Row Level Security constraints
- *      ALOC_API_TOKEN="ALOC-84eb83db941bfc4c524c"                -- Your active ALOC API token
+ *      ALOC_API_TOKEN="ALOC-b77ef1b2396263a9ee7a"                -- Your active ALOC API token
  *      OPENAI_API_KEY="sk-proj-xyz..."                           -- Optional (For text-embedding-3-small 1536-dim vector generation)
  *      GEMINI_API_KEY="AIzaSyXYZ..."                             -- Optional (For text-embedding-004 vector generation)
  * 
@@ -42,7 +42,7 @@ const args = process.argv.slice(2).reduce((acc, val, i, arr) => {
 // Load and validate environment variables
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-const ALOC_TOKEN = process.env.ALOC_API_TOKEN || 'ALOC-84eb83db941bfc4c524c';
+const ALOC_TOKEN = process.env.ALOC_API_TOKEN || 'ALOC-b77ef1b2396263a9ee7a';
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 

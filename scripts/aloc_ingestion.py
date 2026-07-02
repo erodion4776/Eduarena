@@ -29,7 +29,7 @@ load_dotenv(dotenv_path=env_path)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
-ALOC_TOKEN = os.getenv("ALOC_API_TOKEN", "ALOC-84eb83db941bfc4c524c")
+ALOC_TOKEN = os.getenv("ALOC_API_TOKEN", "ALOC-b77ef1b2396263a9ee7a")
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
