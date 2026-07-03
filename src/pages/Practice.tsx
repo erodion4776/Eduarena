@@ -102,6 +102,7 @@ export default function Practice() {
   const [subjectsLoading, setSubjectsLoading] = useState(false);
 
   const [duration, setDuration] = useState(120);
+  const [questionCount, setQuestionCount] = useState(10);
   const [loading, setLoading] = useState(false);
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
 
@@ -403,6 +404,7 @@ export default function Practice() {
         examType,
         selectedSubjects,
         durationMinutes: duration,
+        questionCount,
         topicContext: subjectTopicContext,
       });
 
@@ -420,6 +422,7 @@ export default function Practice() {
     sessionMode,
     examType,
     duration,
+    questionCount,
     availableSubjects,
     initiateSession,
     navigate,
@@ -769,36 +772,64 @@ export default function Practice() {
           )}
 
           {/* Timer & Launch */}
-          <div className="pt-6 border-t border-white/5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-6">
-            <div className="flex items-center gap-3">
-              <Clock className="w-5 h-5 text-zinc-500" aria-hidden="true" />
-              <div>
-                <label
-                  htmlFor="duration-select"
-                  className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block"
-                >
-                  Countdown Timer
-                </label>
-                <select
-                  id="duration-select"
-                  value={duration}
-                  onChange={(e) => setDuration(parseInt(e.target.value, 10))}
-                  className="bg-zinc-950 border border-white/5 text-xs p-2 rounded-xl text-white outline-none focus:border-cyan-500 mt-1 cursor-pointer font-bold"
-                >
-                  <option value={15}>15 Minutes</option>
-                  <option value={30}>30 Minutes</option>
-                  <option value={40}>40 Minutes (Single Subject)</option>
-                  <option value={60}>60 Minutes</option>
-                  <option value={120}>120 Minutes (JAMB Block)</option>
-                  <option value={180}>180 Minutes</option>
-                </select>
+          <div className="pt-6 border-t border-white/5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6">
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="flex items-center gap-3">
+                <Clock className="w-5 h-5 text-zinc-500" aria-hidden="true" />
+                <div>
+                  <label
+                    htmlFor="duration-select"
+                    className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block"
+                  >
+                    Countdown Timer
+                  </label>
+                  <select
+                    id="duration-select"
+                    value={duration}
+                    onChange={(e) => setDuration(parseInt(e.target.value, 10))}
+                    className="bg-zinc-950 border border-white/5 text-xs p-2 rounded-xl text-white outline-none focus:border-cyan-500 mt-1 cursor-pointer font-bold"
+                  >
+                    <option value={15}>15 Minutes</option>
+                    <option value={30}>30 Minutes</option>
+                    <option value={40}>40 Minutes (Single Subject)</option>
+                    <option value={60}>60 Minutes</option>
+                    <option value={120}>120 Minutes (JAMB Block)</option>
+                    <option value={180}>180 Minutes</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <BookOpen className="w-5 h-5 text-zinc-500" aria-hidden="true" />
+                <div>
+                  <label
+                    htmlFor="question-count-select"
+                    className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block"
+                  >
+                    Questions per Subject
+                  </label>
+                  <select
+                    id="question-count-select"
+                    value={questionCount}
+                    onChange={(e) => setQuestionCount(parseInt(e.target.value, 10))}
+                    className="bg-zinc-950 border border-white/5 text-xs p-2 rounded-xl text-white outline-none focus:border-cyan-500 mt-1 cursor-pointer font-bold"
+                  >
+                    <option value={5}>5 Questions</option>
+                    <option value={10}>10 Questions (Standard)</option>
+                    <option value={15}>15 Questions</option>
+                    <option value={20}>20 Questions</option>
+                    <option value={30}>30 Questions</option>
+                    <option value={40}>40 Questions</option>
+                    <option value={50}>50 Questions</option>
+                  </select>
+                </div>
               </div>
             </div>
 
             <Button
               disabled={loading}
               onClick={handleLaunchSession}
-              className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-black rounded-2xl px-8 py-6 flex items-center gap-2 text-sm shadow-xl shadow-cyan-600/15"
+              className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-black rounded-2xl px-8 py-6 flex items-center gap-2 text-sm shadow-xl shadow-cyan-600/15 shrink-0"
             >
               {loading ? (
                 <>

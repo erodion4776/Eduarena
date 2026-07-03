@@ -1,195 +1,389 @@
-import { create } from 'zustand';
+import { create }      from 'zustand';
 import { ALOCQuestion } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase }    from '../lib/supabase';
 import { alocService } from '../lib/alocService';
-import { logger } from '../lib/logger';
+import { logger }      from '../lib/logger';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 export interface SessionSubject {
-  subject: string;
-  questions: ALOCQuestion[];
+  subject:      string;
+  questions:    ALOCQuestion[];
   currentIndex: number;
 }
 
 export interface NeuralVaultSession {
-  id: string;
-  examType: string;
-  subjects: SessionSubject[];
+  id:                 string;
+  examType:           string;
+  subjects:           SessionSubject[];
   activeSubjectIndex: number;
-  startTime: number; // UTC millisecond timestamp
-  duration: number; // in seconds
-  isSubmitted: boolean;
-  isMultiSubject: boolean;
-  userAnswers: Record<string, string>; // key: string(questionId) -> chosenOption ('a', 'b', etc)
-  score: number;
-  xpEarned: number;
-  topicContext?: any;
+  startTime:          number;   // UTC ms timestamp
+  duration:           number;   // seconds
+  isSubmitted:        boolean;
+  isMultiSubject:     boolean;
+  userAnswers:        Record<string, string>; // questionId → 'a'|'b'|'c'|'d'
+  score:              number;
+  xpEarned:           number;
+  topicContext?:      any;
 }
 
 interface NeuralVaultState {
   currentSession: NeuralVaultSession | null;
-  isLoading: boolean;
+  isLoading:      boolean;
+  error:          string | null;
+
   initiateSession: (params: {
-    examType: string;
+    examType:         string;
     selectedSubjects: string[];
-    durationMinutes: number;
-    topicContext?: any;
+    durationMinutes:  number;
+    questionCount?:   number;
+    topicContext?:    any;
   }) => Promise<void>;
-  answerQuestion: (questionId: string | number, answer: string) => void;
-  setCurrentIndex: (subjectIndex: number, idx: number) => void;
+
+  answerQuestion:      (questionId: string | number, answer: string) => void;
+  setCurrentIndex:     (subjectIndex: number, idx: number) => void;
   setActiveSubjectIndex: (idx: number) => void;
-  submitSession: () => Promise<void>;
-  hydrateSession: () => void;
-  queueMigration: () => Promise<void>;
+  submitSession:       () => Promise<void>;
+  hydrateSession:      () => void;
+  clearSession:        () => void;
+  queueMigration:      () => Promise<void>;
 }
 
-// Helper to normalize questions
-const normalizeQuestion = (q: any, subject: string): ALOCQuestion => {
-  if (!q) return {} as ALOCQuestion;
-  const questionText = q.question || q.question_text || q.question_content || '';
-  
-  let optionsObj: Record<string, string> = {};
-  if (q.option) {
-    optionsObj = q.option;
-  } else if (q.options) {
-    optionsObj = q.options;
-  }
-  
-  const normalizedOptions: Record<string, string> = {};
-  Object.entries(optionsObj).forEach(([key, val]) => {
-    normalizedOptions[key.toLowerCase().trim()] = val as string;
-  });
-  
-  const rawAnswer = q.answer || q.correct_answer || q.correct_option || 'a';
-  const answer = String(rawAnswer).toLowerCase().trim();
-  const explanationText = q.explanation || q.solution || 'No explanation available.';
-  
-  return {
-    ...q,
-    id: q.id || Math.floor(Math.random() * 10000000),
-    question: questionText,
-    option: normalizedOptions,
-    answer: answer,
-    solution: explanationText,
-    explanation: explanationText,
-    examType: q.examType || q.exam_type || 'UTME',
-    examyear: String(q.examyear || q.exam_year || q.year || '2024'),
-    subject: subject.toLowerCase(),
-  };
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
+const SESSION_KEY      = 'NEURAL_VAULT_ACTIVE_SESSION';
+const ATTEMPTS_KEY     = 'NEURAL_VAULT_ATTEMPTS_QUEUE';
+const SESSION_MAX_AGE  = 24 * 60 * 60 * 1000; // 24 hours in ms
+
+// ✅ Maps frontend subject names to exactly how they are stored in Supabase
+const SUBJECT_DB_MAP: Record<string, string> = {
+  mathematics: 'Mathematics',
+  biology:     'Biology',
+  physics:     'Physics',
+  chemistry:   'Chemistry',
+  english:     'English',
+  government:  'Government',
+  economics:   'Economics',
+  commerce:    'Commerce',
+  accounting:  'Accounting',
+  literature:  'Literature',
+  geography:   'Geography',
 };
 
+// ✅ Maps frontend exam type to exactly how stored in Supabase
+const EXAM_TYPE_DB_MAP: Record<string, string> = {
+  jamb:   'JAMB',
+  utme:   'JAMB',
+  waec:   'WAEC',
+  wassce: 'WAEC',
+  neco:   'NECO',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Normalize any question shape into ALOCQuestion
+// ─────────────────────────────────────────────────────────────────────────────
+const normalizeQuestion = (q: any, subject: string): ALOCQuestion | null => {
+  if (!q) return null;
+
+  // Unwrap question_data JSONB if fetched from Supabase vault
+  const raw = q.question_data ?? q;
+
+  const questionText = (
+    raw.question      ??
+    raw.question_text ??
+    raw.question_content ?? ''
+  ).trim();
+
+  if (!questionText) return null;
+
+  // Normalize options to lowercase keys
+  const optionsRaw: Record<string, string> =
+    raw.option   ??
+    raw.options  ??
+    raw.choices  ?? {};
+
+  const option: Record<string, string> = {};
+  Object.entries(optionsRaw).forEach(([k, v]) => {
+    option[k.toLowerCase().trim()] = String(v ?? '').trim();
+  });
+
+  // Must have at least 2 options
+  if (Object.keys(option).length < 2) return null;
+
+  const rawAnswer = (
+    raw.answer         ??
+    raw.correct_answer ??
+    raw.correct_option ?? 'a'
+  );
+  const answer = String(rawAnswer).toLowerCase().trim().charAt(0); // 'a'|'b'|'c'|'d'
+
+  const solution = (
+    raw.explanation ??
+    raw.solution    ??
+    'No explanation available.'
+  ).trim();
+
+  // Generate stable ID
+  const id = raw.id ?? q.id ?? Math.floor(Math.random() * 10_000_000);
+
+  return {
+    ...raw,
+    id,
+    question:  questionText,
+    option: option as any,
+    answer,
+    solution,
+    explanation: solution,
+    examType:    raw.examType  ?? raw.exam_type ?? 'UTME',
+    examyear:    String(raw.examyear ?? raw.exam_year ?? raw.year ?? '2024'),
+    subject:     subject,
+  } as ALOCQuestion;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fetch questions from Supabase — fixed case sensitivity
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchFromSupabase(
+  subject:   string,
+  examType:  string,
+  count:     number
+): Promise<any[]> {
+  if (!supabase) {
+    logger.warn('Supabase client not initialized — skipping vault fetch.');
+    return [];
+  }
+
+  // ✅ Map to exact DB casing
+  const dbSubject  = SUBJECT_DB_MAP[subject.toLowerCase()] ?? subject;
+  const dbExamType = EXAM_TYPE_DB_MAP[examType.toLowerCase()] ?? examType.toUpperCase();
+
+  logger.info(`Querying Supabase: subject="${dbSubject}" exam_type="${dbExamType}" limit=${count * 5}`);
+
+  try {
+    const { data, error } = await supabase
+      .from('global_questions_vault')
+      .select('id, subject, exam_type, question_data') // ✅ select specific cols (excluding top level year as it doesn't exist)
+      .eq('subject',   dbSubject)   // ✅ exact case match
+      .eq('exam_type', dbExamType)  // ✅ exact case match
+      .limit(count * 5);
+
+    if (error) {
+      logger.warn(`Supabase vault error: ${error.message}`);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      logger.warn(`No questions found in Supabase for ${dbSubject} / ${dbExamType}`);
+      return [];
+    }
+
+    logger.info(`✅ Supabase returned ${data.length} questions for ${dbSubject}`);
+
+    // ✅ Unwrap question_data and merge top-level fields
+    return data.map(row => ({
+      ...row.question_data,
+      id:        row.id,
+      subject:   row.subject,
+      exam_type: row.exam_type,
+    }));
+
+  } catch (err: any) {
+    logger.warn(`Supabase fetch exception: ${err.message}`);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fetch from ALOC live API
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchFromALOC(
+  subject:  string,
+  examType: string,
+  count:    number
+): Promise<any[]> {
+  try {
+    // ALOC uses 'utme' not 'jamb'
+    const alocType = examType.toLowerCase() === 'jamb'
+      ? 'utme'
+      : examType.toLowerCase();
+
+    const batch = await alocService.fetchLiveQuestions(
+      subject.toLowerCase(),
+      alocType,
+      undefined,
+      count
+    );
+
+    if (batch && batch.length > 0) {
+      logger.info(`✅ ALOC returned ${batch.length} questions for ${subject}`);
+      return batch;
+    }
+
+    return [];
+  } catch (err: any) {
+    logger.warn(`ALOC fetch failed for ${subject}: ${err.message}`);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fetch from local server fallback
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchFromLocalServer(
+  subject:  string,
+  examType: string,
+  count:    number
+): Promise<any[]> {
+  try {
+    const url = `/api/questions?subject=${encodeURIComponent(subject)}&exam_type=${encodeURIComponent(examType.toUpperCase())}`;
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      logger.warn(`Local server returned ${res.status} for ${subject}`);
+      return [];
+    }
+
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+
+    logger.info(`✅ Local server returned ${Math.min(data.length, count)} questions for ${subject}`);
+    return data.slice(0, count);
+
+  } catch (err: any) {
+    logger.warn(`Local server fetch failed: ${err.message}`);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Save session to localStorage safely
+// ─────────────────────────────────────────────────────────────────────────────
+function persistSession(session: NeuralVaultSession): void {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch (err) {
+    logger.warn('Failed to persist session to localStorage');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Store
+// ─────────────────────────────────────────────────────────────────────────────
 export const useNeuralVaultStore = create<NeuralVaultState>((set, get) => ({
   currentSession: null,
-  isLoading: false,
+  isLoading:      false,
+  error:          null,
 
-  initiateSession: async ({ examType, selectedSubjects, durationMinutes, topicContext }) => {
-    set({ isLoading: true });
-    logger.info(`Neural Link activating for ${selectedSubjects.length} subjects.`);
-    
-    const duration = durationMinutes * 60;
+  // ── Initiate Session ───────────────────────────────────────────────────────
+  initiateSession: async ({
+    examType,
+    selectedSubjects,
+    durationMinutes,
+    questionCount = 10,
+    topicContext,
+  }) => {
+    set({ isLoading: true, error: null });
+
+    logger.info(
+      `Neural Link activating — subjects: ${selectedSubjects.join(', ')}, ` +
+      `exam: ${examType}, questions/subject: ${questionCount}`
+    );
+
     const startTime = Date.now();
     const sessionId = `sess-${startTime}`;
-
+    const duration  = durationMinutes * 60;
     const subjectsData: SessionSubject[] = [];
 
     for (const sub of selectedSubjects) {
       let fetched: any[] = [];
-      const examTypeNormalized = examType.toLowerCase() === 'jamb' ? 'utme' : examType.toLowerCase();
 
-      // 1. Try Supabase Global Questions Vault
-      if (supabase) {
-        try {
-          const { data, error } = await supabase
-            .from('global_questions_vault')
-            .select('question_data')
-            .eq('subject', sub.toLowerCase())
-            .eq('exam_type', examTypeNormalized)
-            .limit(10);
+      // ── Priority 1: Supabase Global Vault ─────────────────────────────────
+      fetched = await fetchFromSupabase(sub, examType, questionCount);
 
-          if (!error && data && data.length > 0) {
-            fetched = data.map(item => item.question_data);
-            logger.info(`Fetched ${fetched.length} ${sub} questions from Supabase Global Vault`);
-          }
-        } catch (dbErr) {
-          // Silent fallback
-        }
+      // ── Priority 2: ALOC Live API ──────────────────────────────────────────
+      if (fetched.length < questionCount) {
+        const needed   = questionCount - fetched.length;
+        const liveBatch = await fetchFromALOC(sub, examType, needed);
+        fetched = [...fetched, ...liveBatch];
       }
 
-      // 2. Try ALOC Live Question Ingestion
-      if (fetched.length < 10) {
-        try {
-          const reqCount = 10 - fetched.length;
-          const liveBatch = await alocService.fetchLiveQuestions(sub.toLowerCase(), examTypeNormalized, undefined, reqCount);
-          if (liveBatch && liveBatch.length > 0) {
-            fetched = [...fetched, ...liveBatch];
-            logger.info(`Fetched ${liveBatch.length} ${sub} questions from ALOC Satellite`);
-          }
-        } catch (liveErr) {
-          // Silent fallback
-        }
-      }
-
-      // 3. Last Line of Defense: Local server questions route fallback
+      // ── Priority 3: Local server fallback ─────────────────────────────────
       if (fetched.length === 0) {
-        try {
-          const res = await fetch(`/api/questions?subject=${sub}&exam_type=${examTypeNormalized.toUpperCase()}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) {
-              fetched = data.slice(0, 10);
-              logger.info(`Fetched ${fetched.length} ${sub} questions from Local static fallback`);
-            }
-          }
-        } catch (e) {
-          // Silent fallback
-        }
+        fetched = await fetchFromLocalServer(sub, examType, questionCount);
       }
 
-      const normalizedQuestions = fetched.map(q => normalizeQuestion(q, sub)).filter(q => q && q.id);
-      
+      // ── Normalize & filter invalid questions ──────────────────────────────
+      const normalized = fetched
+        .map(q => normalizeQuestion(q, sub))
+        .filter((q): q is ALOCQuestion => q !== null && Boolean(q.id));
+
+      // ✅ Sort by year descending (newest first) to avoid random mixed years
+      const sortedByYear = [...normalized].sort((a, b) => {
+        const yearA = parseInt(a.examyear || '0', 10);
+        const yearB = parseInt(b.examyear || '0', 10);
+        return yearB - yearA;
+      });
+
+      // ✅ Slice to requested question count
+      const finalQuestions = sortedByYear.slice(0, questionCount);
+
+      // Shuffle for variety
+      const shuffled = [...finalQuestions].sort(() => Math.random() - 0.5);
+
+      logger.info(
+        `Subject "${sub}": ${shuffled.length} valid questions ready ` +
+        `(${fetched.length} raw fetched)`
+      );
+
       subjectsData.push({
-        subject: sub,
-        questions: normalizedQuestions,
-        currentIndex: 0
+        subject:      sub,
+        questions:    shuffled,
+        currentIndex: 0,
       });
     }
 
     const newSession: NeuralVaultSession = {
-      id: sessionId,
-      examType: examType,
-      subjects: subjectsData,
+      id:                 sessionId,
+      examType,
+      subjects:           subjectsData,
       activeSubjectIndex: 0,
-      startTime: startTime,
-      duration: duration,
-      isSubmitted: false,
-      isMultiSubject: selectedSubjects.length > 1,
-      userAnswers: {},
-      score: 0,
-      xpEarned: 0,
-      topicContext: topicContext || null
+      startTime,
+      duration,
+      isSubmitted:        false,
+      isMultiSubject:     selectedSubjects.length > 1,
+      userAnswers:        {},
+      score:              0,
+      xpEarned:           0,
+      topicContext:       topicContext ?? null,
     };
 
-    localStorage.setItem('NEURAL_VAULT_ACTIVE_SESSION', JSON.stringify(newSession));
+    persistSession(newSession);
     set({ currentSession: newSession, isLoading: false });
-    logger.info("Neural session initialized. State recorded to Zero Data Loss layer.");
+    logger.info(`✅ Session ${sessionId} initialized with ${subjectsData.length} subject(s).`);
   },
 
+  // ── Answer Question ────────────────────────────────────────────────────────
   answerQuestion: (questionId, answer) => {
     const { currentSession } = get();
     if (!currentSession || currentSession.isSubmitted) return;
 
-    const updatedAnswers = {
-      ...currentSession.userAnswers,
-      [String(questionId)]: answer
-    };
+    const key = String(questionId);
 
-    const updatedSession = {
+    // ✅ Skip if answer unchanged — avoid unnecessary re-renders + localStorage writes
+    if (currentSession.userAnswers[key] === answer) return;
+
+    const updatedSession: NeuralVaultSession = {
       ...currentSession,
-      userAnswers: updatedAnswers
+      userAnswers: {
+        ...currentSession.userAnswers,
+        [key]: answer.toLowerCase().trim(),
+      },
     };
 
-    // Save immediately to local storage (Mandate: Zero Data Loss)
-    localStorage.setItem('NEURAL_VAULT_ACTIVE_SESSION', JSON.stringify(updatedSession));
-    
+    persistSession(updatedSession);
+
     // Save queue attempt locally for background sync when connection is detected
     const attemptQueueKey = 'NEURAL_VAULT_ATTEMPTS_QUEUE';
     try {
@@ -197,7 +391,7 @@ export const useNeuralVaultStore = create<NeuralVaultState>((set, get) => ({
       const queue = savedQueue ? JSON.parse(savedQueue) : [];
       queue.push({
         questionId,
-        answer,
+        answer: answer.toLowerCase().trim(),
         timestamp: Date.now()
       });
       localStorage.setItem(attemptQueueKey, JSON.stringify(queue));
@@ -208,126 +402,248 @@ export const useNeuralVaultStore = create<NeuralVaultState>((set, get) => ({
     set({ currentSession: updatedSession });
   },
 
+  // ── Navigation ─────────────────────────────────────────────────────────────
   setCurrentIndex: (subjectIndex, idx) => {
     const { currentSession } = get();
     if (!currentSession) return;
 
-    const subjects = [...currentSession.subjects];
-    if (subjects[subjectIndex]) {
-      subjects[subjectIndex] = {
-        ...subjects[subjectIndex],
-        currentIndex: idx
-      };
-    }
+    const subjects = currentSession.subjects.map((s, i) =>
+      i === subjectIndex ? { ...s, currentIndex: idx } : s
+    );
 
-    const updatedSession = {
-      ...currentSession,
-      subjects
-    };
-
-    localStorage.setItem('NEURAL_VAULT_ACTIVE_SESSION', JSON.stringify(updatedSession));
-    set({ currentSession: updatedSession });
+    const updated = { ...currentSession, subjects };
+    persistSession(updated);
+    set({ currentSession: updated });
   },
 
   setActiveSubjectIndex: (idx) => {
     const { currentSession } = get();
     if (!currentSession) return;
 
-    const updatedSession = {
-      ...currentSession,
-      activeSubjectIndex: idx
-    };
-
-    localStorage.setItem('NEURAL_VAULT_ACTIVE_SESSION', JSON.stringify(updatedSession));
-    set({ currentSession: updatedSession });
+    const updated = { ...currentSession, activeSubjectIndex: idx };
+    persistSession(updated);
+    set({ currentSession: updated });
   },
 
+  // ── Submit Session ─────────────────────────────────────────────────────────
   submitSession: async () => {
     const { currentSession } = get();
     if (!currentSession || currentSession.isSubmitted) return;
 
-    logger.info(`Triggering final submission for session ${currentSession.id}`);
+    logger.info(`Submitting session ${currentSession.id}...`);
 
-    // Calculate score
+    // ── Calculate score ───────────────────────────────────────────────────
     let totalQuestions = 0;
-    let correctCount = 0;
+    let correctCount   = 0;
+
+    // ✅ Build detailed mistakes array (not just a count)
+    const mistakes: Array<{
+      questionId: string;
+      question:   string;
+      userAnswer: string;
+      correct:    string;
+      subject:    string;
+    }> = [];
 
     currentSession.subjects.forEach(sub => {
       sub.questions.forEach(q => {
         totalQuestions++;
-        const answer = currentSession.userAnswers[String(q.id)];
-        if (answer && answer.toLowerCase().trim() === (q.answer || '').toLowerCase().trim()) {
+        const userAnswer = (currentSession.userAnswers[String(q.id)] ?? '').toLowerCase().trim();
+        const correct    = (q.answer ?? '').toLowerCase().trim();
+
+        if (userAnswer === correct) {
           correctCount++;
+        } else {
+          mistakes.push({
+            questionId: String(q.id),
+            question:   q.question,
+            userAnswer: userAnswer || 'unanswered',
+            correct,
+            subject:    sub.subject,
+          });
         }
       });
     });
 
-    const finalPercent = totalQuestions > 0 ? (correctCount / totalQuestions) * 100 : 0;
-    const finalXp = correctCount * 12; // 12 XP per correct answer in CBT
+    const finalPercent = totalQuestions > 0
+      ? Math.round((correctCount / totalQuestions) * 100)
+      : 0;
+    const finalXp = correctCount * 12;
 
-    const updatedSession: NeuralVaultSession = {
+    const submittedSession: NeuralVaultSession = {
       ...currentSession,
       isSubmitted: true,
-      score: finalPercent,
-      xpEarned: finalXp
+      score:       finalPercent,
+      xpEarned:    finalXp,
     };
 
-    localStorage.setItem('NEURAL_VAULT_ACTIVE_SESSION', JSON.stringify(updatedSession));
-    set({ currentSession: updatedSession });
+    persistSession(submittedSession);
+    set({ currentSession: submittedSession });
 
+    // ── Persist to server ─────────────────────────────────────────────────
     try {
-      // Post session history
-      await fetch('/api/practice/session/save-result', {
-        method: 'POST',
+      const res = await fetch('/api/practice/session/save-result', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: currentSession.id,
-          subject: currentSession.isMultiSubject ? 'JAMB block' : currentSession.subjects[0]?.subject || 'mixed',
-          finalScore: finalPercent,
-          totalQuestions: totalQuestions,
-          xpEarned: finalXp,
-          mistakes: totalQuestions - correctCount
-        })
+          sessionId:      currentSession.id,
+          subject:        currentSession.isMultiSubject
+            ? 'Multi-Subject'
+            : currentSession.subjects[0]?.subject ?? 'Mixed',
+          finalScore:     finalPercent,
+          totalQuestions,
+          xpEarned:       finalXp,
+          mistakes,        // ✅ Full array not just count
+          metadata: {
+            examType:    currentSession.examType,
+            subjects:    currentSession.subjects.map(s => s.subject),
+            duration:    currentSession.duration,
+            answeredCount: Object.keys(currentSession.userAnswers).length,
+          },
+        }),
       });
 
-      // Attempt Sync to global questions vault via questionRouter migrateLocalToGlobal
-      const queueKey = 'NEURAL_VAULT_ATTEMPTS_QUEUE';
-      const savedQueue = localStorage.getItem(queueKey);
-      if (savedQueue && supabase) {
-        // Attempt immediate synchronization of results or cache
-        localStorage.removeItem(queueKey);
+      if (!res.ok) {
+        logger.warn(`Server save returned ${res.status} — result preserved locally.`);
+      } else {
+        logger.info('✅ Session result saved to server.');
+        // Clear attempts queue now that server confirmed receipt
+        localStorage.removeItem(ATTEMPTS_KEY);
       }
-    } catch (err) {
-      logger.warn("Server update failed or user offline. Synced locally. Result intact.");
+    } catch (err: any) {
+      logger.warn(`Server save failed (offline?): ${err.message} — result intact locally.`);
     }
 
-    logger.info("Session submission registered successfully!");
-  },
-
-  hydrateSession: () => {
-    const active = localStorage.getItem('NEURAL_VAULT_ACTIVE_SESSION');
-    if (active) {
-      try {
-        const parsed = JSON.parse(active);
-        set({ currentSession: parsed });
-      } catch (err) {
-        console.error("Failed to hydrate active session", err);
-      }
-    }
-  },
-
-  queueMigration: async () => {
-    // Sync locally stored cached attempts to global vault
+    // ── Also save to Supabase directly if available ───────────────────────
     if (supabase) {
       try {
-        logger.info("Connection stable. Initiating Global Neural Sync...");
-        const response = await fetch('/api/aloc/health').catch(() => null);
-        if (response && response.ok) {
-          logger.info("ALOC link functional. Aligning past local cache into global vault.");
+        const { error } = await supabase
+          .from('practice_results')
+          .insert({
+            user_id:         'anonymous', // replace with real user ID if auth available
+            session_id:      currentSession.id,
+            subject:         currentSession.isMultiSubject
+              ? 'Multi-Subject'
+              : currentSession.subjects[0]?.subject ?? 'Mixed',
+            score:           finalPercent,
+            total_questions: totalQuestions,
+            xp_earned:       finalXp,
+            mistakes:        mistakes,
+            metadata: {
+              examType: currentSession.examType,
+              subjects: currentSession.subjects.map(s => s.subject),
+            },
+            created_at: new Date().toISOString(),
+          });
+
+        if (error) {
+          logger.warn(`Supabase practice_results insert failed: ${error.message}`);
+        } else {
+          logger.info('✅ Session result saved to Supabase practice_results.');
         }
-      } catch (e) {
-        // Silent
+      } catch (err: any) {
+        logger.warn(`Supabase direct save failed: ${err.message}`);
       }
     }
-  }
+
+    logger.info(
+      `✅ Session complete — score: ${finalPercent}%, ` +
+      `correct: ${correctCount}/${totalQuestions}, XP: ${finalXp}`
+    );
+  },
+
+  // ── Hydrate Session from localStorage ─────────────────────────────────────
+  hydrateSession: () => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return;
+
+      const parsed: NeuralVaultSession = JSON.parse(raw);
+
+      // ✅ Don't restore sessions older than 24 hours
+      const age = Date.now() - (parsed.startTime ?? 0);
+      if (age > SESSION_MAX_AGE) {
+        logger.info('Stored session expired — clearing.');
+        localStorage.removeItem(SESSION_KEY);
+        return;
+      }
+
+      // ✅ Don't restore already-submitted sessions on fresh load
+      if (parsed.isSubmitted) {
+        logger.info('Stored session already submitted — not restoring.');
+        localStorage.removeItem(SESSION_KEY);
+        return;
+      }
+
+      // ✅ Validate structure before restoring
+      if (
+        !parsed.id        ||
+        !parsed.subjects  ||
+        !Array.isArray(parsed.subjects)
+      ) {
+        logger.warn('Stored session has invalid structure — clearing.');
+        localStorage.removeItem(SESSION_KEY);
+        return;
+      }
+
+      set({ currentSession: parsed });
+      logger.info(`✅ Hydrated session ${parsed.id} from localStorage.`);
+
+    } catch (err) {
+      logger.warn('Failed to hydrate session — clearing corrupt data.');
+      localStorage.removeItem(SESSION_KEY);
+    }
+  },
+
+  // ── Clear Session ──────────────────────────────────────────────────────────
+  clearSession: () => {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(ATTEMPTS_KEY);
+    set({ currentSession: null, error: null });
+    logger.info('Session cleared.');
+  },
+
+  // ── Queue Migration — sync local attempts to Supabase ─────────────────────
+  queueMigration: async () => {
+    if (!supabase) return;
+
+    try {
+      const raw = localStorage.getItem(ATTEMPTS_KEY);
+      if (!raw) return;
+
+      const queue: Array<{
+        questionId: string;
+        answer:     string;
+        timestamp:  number;
+      }> = JSON.parse(raw);
+
+      if (queue.length === 0) return;
+
+      logger.info(`Syncing ${queue.length} queued attempts to Supabase...`);
+
+      // ✅ Actually does something now — saves attempts to Supabase
+      const { error } = await supabase
+        .from('practice_results')
+        .insert({
+          user_id:    'anonymous',
+          session_id: `migrated-${Date.now()}`,
+          metadata: {
+            source:   'queue_migration',
+            attempts: queue,
+          },
+          score:           0,
+          total_questions: queue.length,
+          created_at:      new Date().toISOString(),
+        });
+
+      if (error) {
+        logger.warn(`Queue migration failed: ${error.message}`);
+      } else {
+        localStorage.removeItem(ATTEMPTS_KEY);
+        logger.info('✅ Queue migration complete.');
+      }
+    } catch (err: any) {
+      logger.warn(`queueMigration exception: ${err.message}`);
+    }
+  },
 }));

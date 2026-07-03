@@ -1,6 +1,6 @@
 import React, { 
   useState, useEffect, useRef, 
-  useCallback
+  useCallback, useMemo
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,8 @@ import {
   BrainCircuit, ChevronRight, ChevronLeft,
   Clock, Award, Lock, CheckCircle2, 
   XCircle, Volume2, VolumeX, AlertCircle,
-  HelpCircle, RotateCcw, ShieldAlert, LogOut
+  HelpCircle, RotateCcw, ShieldAlert, LogOut,
+  Loader2, Sparkles, BookOpen
 } from 'lucide-react';
 import { useNeuralVaultStore } from '../store/useNeuralVaultStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -279,6 +280,9 @@ export default function ExamArena() {
   const [showExitWarning,    setShowExitWarning]    = useState(false);
   const [isSavingToDb,       setIsSavingToDb]       = useState(false);
   const [frozenResult,       setFrozenResult]       = useState<SessionResult | null>(null);
+  const [failedExplanations, setFailedExplanations] = useState<Record<string, { answer: string; provider: string }>>({});
+  const [loadingExplanations, setLoadingExplanations] = useState<Record<string, boolean>>({});
+  const [explainingAll,      setExplainingAll]      = useState(false);
 
   // ── Refs ────────────────────────────────────
   const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -480,6 +484,75 @@ export default function ExamArena() {
       setIsAiProcessing(false);
     }
   }, [currentSession?.isSubmitted, user]);
+
+  const failedQuestions = useMemo(() => {
+    if (!currentSession) return [];
+    const failed: { question: any; subject: string; chosen: string; correct: string }[] = [];
+    currentSession.subjects.forEach(sub => {
+      sub.questions.forEach(q => {
+        const userAns = (currentSession.userAnswers[String(q.id)] ?? '').toLowerCase().trim();
+        const correctAns = (q.answer ?? '').toLowerCase().trim();
+        if (userAns !== correctAns) {
+          failed.push({
+            question: q,
+            subject: sub.subject,
+            chosen: userAns || 'Unanswered',
+            correct: correctAns
+          });
+        }
+      });
+    });
+    return failed;
+  }, [currentSession]);
+
+  const explainFailedQuestion = useCallback(async (q: any) => {
+    if (failedExplanations[q.id] || loadingExplanations[q.id]) return;
+    setLoadingExplanations(prev => ({ ...prev, [q.id]: true }));
+    try {
+      const response = await aiTutor.askTutorChuksLive(
+        'Explain why this is correct and why my choice was wrong.',
+        q
+      );
+      setFailedExplanations(prev => ({ ...prev, [q.id]: response }));
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to get AI explanation for this question.');
+    } finally {
+      setLoadingExplanations(prev => ({ ...prev, [q.id]: false }));
+    }
+  }, [failedExplanations, loadingExplanations]);
+
+  const explainAllFailed = useCallback(async () => {
+    if (failedQuestions.length === 0) return;
+    setExplainingAll(true);
+    toast.info('Starting AI analysis for all failed questions. Hold tight!', { duration: 3000 });
+    
+    try {
+      for (const item of failedQuestions) {
+        const q = item.question;
+        if (!failedExplanations[q.id]) {
+          setLoadingExplanations(prev => ({ ...prev, [q.id]: true }));
+          try {
+            const response = await aiTutor.askTutorChuksLive(
+              'Explain why this is correct and why my choice was wrong.',
+              q
+            );
+            setFailedExplanations(prev => ({ ...prev, [q.id]: response }));
+          } catch (err) {
+            console.warn(`Failed to explain question ${q.id}`, err);
+          } finally {
+            setLoadingExplanations(prev => ({ ...prev, [q.id]: false }));
+          }
+        }
+      }
+      toast.success('AI Diagnostics complete! All failed questions have been explained.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Batch AI diagnostics encountered an error.');
+    } finally {
+      setExplainingAll(false);
+    }
+  }, [failedQuestions, failedExplanations]);
 
   // ─────────────────────────────────────────────
   // GUARDS
@@ -1001,6 +1074,172 @@ export default function ExamArena() {
             )}
           </div>
         </section>
+
+        {/* AI Mistakes Diagnostic & Explanations */}
+        {isSubmitted && (
+          <div className="mt-8 bg-zinc-900 border border-white/5 rounded-3xl p-6 md:p-8 space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-950/40 border border-rose-500/30 text-rose-400 text-xs font-black uppercase tracking-[0.2em] mb-2">
+                  <BrainCircuit className="w-3.5 h-3.5 animate-pulse" />
+                  AI Diagnostics Desk
+                </div>
+                <h2 className="text-xl md:text-2xl font-black text-white tracking-tight">
+                  Mistakes Analysis & AI Explanations
+                </h2>
+                <p className="text-xs text-zinc-400 mt-1">
+                  Review each question you got wrong and let Tutor Chuks explain the concept.
+                </p>
+              </div>
+
+              {failedQuestions.length > 0 && (
+                <Button
+                  onClick={explainAllFailed}
+                  disabled={explainingAll}
+                  className="bg-rose-600 hover:bg-rose-500 text-white font-black text-xs uppercase px-5 py-4 rounded-2xl flex items-center gap-2 disabled:opacity-40 shadow-lg shadow-rose-600/15"
+                >
+                  {explainingAll ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Analyzing all...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 fill-current" />
+                      Explain All Mistakes
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+
+            {failedQuestions.length === 0 ? (
+              <div className="text-center py-10 space-y-3 bg-zinc-950/40 border border-emerald-500/10 rounded-2xl p-6">
+                <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h3 className="font-extrabold text-sm text-emerald-400 uppercase tracking-wider">
+                  Flawless Run!
+                </h3>
+                <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                  You got every single question correct! Brilliant performance. No failed questions to analyze.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {failedQuestions.map((item, index) => {
+                  const q = item.question;
+                  const explanation = failedExplanations[q.id];
+                  const isLoading = loadingExplanations[q.id];
+
+                  return (
+                    <div
+                      key={q.id}
+                      className="bg-zinc-950/60 border border-white/5 rounded-2xl p-5 md:p-6 space-y-4 hover:border-white/10 transition-colors"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span className="text-[10px] font-black uppercase text-rose-400 bg-rose-950/40 border border-rose-500/20 px-2.5 py-1 rounded-md tracking-wider">
+                          {item.subject} · Mistake #{index + 1}
+                        </span>
+                        
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-zinc-500 font-mono">
+                            Your Choice:{' '}
+                            <span className="text-rose-400 font-bold uppercase">
+                              {item.chosen}
+                            </span>
+                          </span>
+                          <span className="text-zinc-600" aria-hidden="true">|</span>
+                          <span className="text-zinc-500 font-mono">
+                            Correct Answer:{' '}
+                            <span className="text-emerald-400 font-bold uppercase">
+                              {item.correct}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Question Content */}
+                      <div className="space-y-3">
+                        <div
+                          className="text-sm md:text-base font-bold text-zinc-200 leading-relaxed"
+                          dangerouslySetInnerHTML={{ __html: q.question }}
+                        />
+
+                        {/* Options list for context */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          {q.option &&
+                            Object.entries(q.option)
+                              .filter(([, value]) => (value as string)?.trim() !== '')
+                              .map(([key, value]) => {
+                                const isUserAns = item.chosen === key;
+                                const isCorrectAns = item.correct === key;
+                                return (
+                                  <div
+                                    key={key}
+                                    className={`p-3 rounded-xl border flex items-center gap-3 ${
+                                      isCorrectAns
+                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-medium'
+                                        : isUserAns
+                                          ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                                          : 'bg-zinc-900/40 border-white/5 text-zinc-400'
+                                    }`}
+                                  >
+                                    <span className="font-bold uppercase">{key})</span>
+                                    <span dangerouslySetInnerHTML={{ __html: value as string }} />
+                                  </div>
+                                );
+                              })}
+                        </div>
+                      </div>
+
+                      {/* AI Explanation Area */}
+                      <div className="pt-4 border-t border-white/5">
+                        {explanation ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-[10px] font-black uppercase text-cyan-400 tracking-wider">
+                              <BrainCircuit className="w-3.5 h-3.5 animate-pulse" />
+                              Tutor Chuks Diagnostic Explanation:
+                            </div>
+                            <div className="text-xs text-zinc-300 bg-zinc-900/50 p-4 rounded-xl border border-white/5 whitespace-pre-line leading-relaxed">
+                              {explanation.answer}
+                            </div>
+                            <div className="text-[9px] font-mono text-zinc-500 text-right">
+                              via {explanation.provider} Network
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-zinc-500">
+                              Understand this topic before the real exam.
+                            </span>
+                            <Button
+                              onClick={() => explainFailedQuestion(q)}
+                              disabled={isLoading}
+                              className="bg-cyan-950/60 hover:bg-cyan-900 text-cyan-400 border border-cyan-500/30 font-black text-xs uppercase px-4 py-3 rounded-xl flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {isLoading ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Querying AI...
+                                </>
+                              ) : (
+                                <>
+                                  <BrainCircuit className="w-3.5 h-3.5" />
+                                  Explain Mistake
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Exit Warning ──────────────────────── */}
