@@ -715,11 +715,47 @@ async function startServer() {
     res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, points: user.points, level: user.level } });
   });
 
-  app.get("/api/auth/me", (req, res) => {
+  app.post("/api/auth/session", (req, res) => {
+    const { userId, role } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId is required" });
+    const token = jwt.sign({ userId, role: role || "student" }, JWT_SECRET, { expiresIn: "7d" });
+    res.cookie("token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 24 * 60 * 60 * 1000 });
+    res.json({ success: true });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
     const token = req.cookies.token;
     if (!token) return res.status(401).json({ error: "Not authenticated" });
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
+      
+      // Try to load from Supabase if configured
+      if (supabase) {
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', decoded.userId)
+            .maybeSingle();
+
+          if (profile) {
+            return res.json({
+              user: {
+                id: profile.id,
+                name: profile.name,
+                email: profile.email,
+                role: profile.role,
+                points: Number(profile.points ?? 0),
+                level: Number(profile.level ?? 1),
+                school_id: profile.tenant_id
+              }
+            });
+          }
+        } catch (supabaseErr) {
+          console.error('Failed to query profiles from Supabase in /api/auth/me:', supabaseErr);
+        }
+      }
+
       const db = getDb();
       const user = db.users.find((u: any) => u.id === decoded.userId);
       if (!user) return res.status(404).json({ error: "User not found" });

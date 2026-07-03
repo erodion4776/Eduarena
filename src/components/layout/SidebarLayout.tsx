@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
+import { useAuthStore } from '@/src/store/useAuthStore';
 import Navbar from './Navbar';
 import { 
   LayoutDashboard, 
@@ -12,11 +13,21 @@ import {
   Swords, 
   Trophy, 
   Bell, 
-  Settings 
+  Settings,
+  GraduationCap,
+  Shield
 } from 'lucide-react';
 
-const menuItems = [
+interface MenuItem {
+  name: string;
+  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+  roles?: ('student' | 'teacher' | 'admin')[];
+}
+
+const menuItems: MenuItem[] = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+  { name: 'Teacher Panel', path: '/teacher', icon: GraduationCap, roles: ['teacher', 'admin'] },
   { name: 'Practice', path: '/practice', icon: BookOpen },
   { name: 'Mock Exams', path: '/arena', icon: FileEdit },
   { name: 'AI Tutor', path: '/tutor', icon: Cpu },
@@ -27,10 +38,16 @@ const menuItems = [
   { name: 'Achievements', path: '/achievements', icon: Trophy },
   { name: 'Notifications', path: '/notifications', icon: Bell },
   { name: 'Settings', path: '/settings', icon: Settings },
+  { name: 'Admin Control', path: '/admin', icon: Shield, roles: ['admin'] },
 ];
 
 export default function SidebarLayout({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = React.useState(false);
+  const { user } = useAuthStore();
+
+  const allowedMenuItems = menuItems.filter(
+    (item) => !item.roles || (user && item.roles.includes(user.role))
+  );
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
@@ -63,7 +80,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
         </div>
 
         <nav className="flex flex-col gap-1 overflow-y-auto flex-1 no-scrollbar">
-          {menuItems.map((item) => (
+          {allowedMenuItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
