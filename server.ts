@@ -12,12 +12,13 @@ import cors from "cors";
 import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createClient } from '@supabase/supabase-js';
+import aiRoutes from "./server/routes/ai.ts";
 
 // ─────────────────────────────────────────────
 // Supabase Client
 // ─────────────────────────────────────────────
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -28,7 +29,10 @@ console.log('Supabase client:', supabase ? '✅ Connected' : '❌ Not configured
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const JWT_SECRET = process.env.JWT_SECRET || "eduarena-secret-key-123";
+const JWT_SECRET = process.env.JWT_SECRET || "eduarena-secret-key-123-fallback-safe-default-key";
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
+  console.error("❌ CRITICAL SECURITY WARNING: JWT_SECRET environment variable is missing in production environment!");
+}
 const DB_FILE = path.join(__dirname, "db.json");
 
 const SUBJECT_ID_MAP: Record<string, string> = {
@@ -65,14 +69,12 @@ async function saveChatMessage(
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
-      .from('chat_sessions')
+      .from('chat_messages')
       .insert({
         session_id: sessionId,
-        user_id: userId,
         role,
         content,
-        subject: subject || null,
-        metadata: metadata || {},
+        metadata: { ...(metadata || {}), userId, subject },
         created_at: new Date().toISOString()
       })
       .select()
@@ -94,7 +96,7 @@ async function getChatHistory(sessionId: string, limit = 10) {
   if (!supabase) return [];
   try {
     const { data, error } = await supabase
-      .from('chat_sessions')
+      .from('chat_messages')
       .select('*')
       .eq('session_id', sessionId)
       .order('created_at', { ascending: true })
@@ -308,14 +310,32 @@ async function ensureSupabaseTables() {
 
   console.log('🔧 Checking Supabase tables...');
 
-  // Test chat_sessions table
-  const { error: chatError } = await supabase
-    .from('chat_sessions')
-    .select('id')
-    .limit(1);
+  const tablesToCheck = [
+    'chat_sessions',
+    'chat_messages',
+    'ai_response_cache',
+    'practice_results',
+    'user_profiles',
+    'battle_results',
+    'global_questions_vault',
+    'knowledge_base'
+  ];
 
-  if (chatError?.code === '42P01') {
-    console.log('⚠️ chat_sessions table missing. Please run this SQL in Supabase:');
+  const missingTables: string[] = [];
+
+  for (const table of tablesToCheck) {
+    const { error } = await supabase
+      .from(table)
+      .select('id')
+      .limit(1);
+
+    if (error && error.code === '42P01') {
+      missingTables.push(table);
+    }
+  }
+
+  if (missingTables.length > 0) {
+    console.warn(`⚠️ The following Supabase tables are missing: ${missingTables.join(', ')}. Please run this SQL in your Supabase SQL Editor to initialize them:`);
     console.log(`
 -- ═══════════════════════════════════════════
 -- COPY AND RUN THIS IN SUPABASE SQL EDITOR
@@ -599,6 +619,32 @@ function saveDb(db: any) {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
+// ─────────────────────────────────────────────
+// Rate Limiting for AI Routes
+// ─────────────────────────────────────────────
+const aiRateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function aiRateLimiter(req: any, res: any, next: any) {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const now = Date.now();
+  const limit = 30; // 30 requests per minute
+  const windowMs = 60 * 1000;
+
+  let record = aiRateLimits.get(ip);
+  if (!record || now > record.resetAt) {
+    record = { count: 1, resetAt: now + windowMs };
+    aiRateLimits.set(ip, record);
+    return next();
+  }
+
+  if (record.count >= limit) {
+    return res.status(429).json({ error: "Too many AI requests. Please try again after a minute." });
+  }
+
+  record.count++;
+  next();
+}
+
 async function startServer() {
   const app = express();
   const httpServer = createServer(app);
@@ -608,6 +654,9 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
   app.use(cookieParser());
+
+  // Mount RAG-powered AI router with rate limiting
+  app.use("/api/ai", aiRateLimiter, aiRoutes);
 
   // Run Supabase table check on startup
   await ensureSupabaseTables();
@@ -703,36 +752,7 @@ async function startServer() {
     });
   }
 
-  // ─────────────────────────────────────────────
-  // Chat History Routes
-  // ─────────────────────────────────────────────
-  app.get("/api/ai/chat/history", async (req, res) => {
-    const { session_id, limit } = req.query;
-    if (!session_id) return res.status(400).json({ error: "session_id is required" });
 
-    const history = await getChatHistory(String(session_id), Number(limit) || 20);
-    res.json({ history });
-  });
-
-  app.delete("/api/ai/chat/history", async (req, res) => {
-    const { session_id } = req.query;
-    if (!session_id || !supabase) return res.json({ success: false });
-
-    try {
-      const { error } = await supabase
-        .from('chat_sessions')
-        .delete()
-        .eq('session_id', String(session_id));
-
-      if (error) {
-        console.error('❌ Failed to clear chat history:', error.message);
-        return res.status(500).json({ error: error.message });
-      }
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
 
   // ─────────────────────────────────────────────
   // AI Context Search
@@ -803,7 +823,7 @@ async function startServer() {
     const geminiApiKey = process.env.GEMINI_API_KEY;
     if (geminiApiKey) {
       try {
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+        const ai = new GoogleGenAI({ apiKey: geminiApiKey });
         const prompt = `Generate ONE Nigerian exam question for ${chosenSubject} (${chosenType}, ${chosenYear}). Return ONLY raw JSON:
 {
   "id": ${Math.floor(Math.random() * 8000) + 3500},
@@ -813,7 +833,7 @@ async function startServer() {
   "solution": "<explanation>"
 }`;
 
-        const genResponse = await ai.models.generateContent({ model: "gemini-1.5-flash", contents: prompt });
+        const genResponse = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
         const text = (genResponse.text || "").replace(/^```(?:json)?\s*/im, "").replace(/\s*```\s*$/im, "").trim();
         const parsedQuestion = JSON.parse(text);
         return res.json({ status: 200, message: "success (AI fallback)", data: { ...parsedQuestion, examType: chosenType.toUpperCase(), examyear: chosenYear } });
@@ -1092,140 +1112,26 @@ async function startServer() {
   }
 
   // ─────────────────────────────────────────────
-  // ✅ MAIN AI TUTOR ROUTE (Fully Supabase Connected)
+  // ✅ MAIN AI TUTOR ROUTE (Moved to server/routes/ai.ts)
   // ─────────────────────────────────────────────
-  app.post("/api/ai/tutor", async (req, res) => {
-    const {
-      message,
-      history,
-      systemInstruction: clientSystemInstruction,
-      subject,
-      session_id,
-      user_id
-    } = req.body;
-
-    if (!message) return res.status(400).json({ error: "Message is required" });
-
-    // Generate session ID if not provided
-    const sessionId = session_id || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // ✅ Save user message to Supabase
-    await saveChatMessage(
-      sessionId,
-      user_id || null,
-      'user',
-      message,
-      subject,
-      { history_length: history?.length || 0 }
-    );
-
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!geminiApiKey || geminiApiKey === 'undefined') {
-      const offlineMsg = "Omo! I am currently running without a live Gemini key. Please configure GEMINI_API_KEY to activate real-time intelligence.";
-
-      // ✅ Save offline response to Supabase
-      await saveChatMessage(sessionId, user_id || null, 'assistant', offlineMsg, subject, { provider: 'offline-fallback' });
-
-      return res.json({ response: offlineMsg, provider: "offline-fallback", session_id: sessionId });
-    }
-
-    try {
-      // ✅ Get RAG context from Supabase
-      const chosenSubject = subject || null;
-      const { context: retrievedKnowledge, source: sourceName } = await searchSupabase(message, chosenSubject);
-      console.log("RAG context:", retrievedKnowledge ? `${retrievedKnowledge.length} chars` : "none", "Source:", sourceName);
-
-      // ✅ Get previous chat history from Supabase to continue conversation
-      const supabaseHistory = await getChatHistory(sessionId, 10);
-      console.log(`📚 Loaded ${supabaseHistory.length} messages from Supabase history`);
-
-      const defaultSystemInstruction = `You are Tutor Chuks, a brilliant Nigerian AI CBT Tutor helping students ace JAMB, WAEC and NECO.
-
-${retrievedKnowledge
-  ? `KNOWLEDGE BASE CONTEXT (use this to answer):\n${retrievedKnowledge}`
-  : 'No specific database entry found. Use your general training knowledge.'}
-
-Rules:
-- Be concise and direct (under 150 words)
-- Reference the knowledge base context when available
-- Use Nigerian examples and analogies
-- If past questions are available, use them as examples
-- Focus only on academics
-- End with one exam tip when possible`;
-
-      const systemInstruction = clientSystemInstruction || defaultSystemInstruction;
-
-      // Build contents from Supabase history (more reliable than client history)
-      const contents: any[] = [];
-
-      if (supabaseHistory.length > 0) {
-        // Use Supabase stored history (excludes current message which was just saved)
-        const historyMessages = supabaseHistory.slice(0, -1); // exclude the message we just saved
-        for (const msg of historyMessages.slice(-8)) {
-          const role = msg.role === 'user' ? 'user' : 'model';
-          if (msg.content) {
-            contents.push({ role, parts: [{ text: msg.content }] });
-          }
-        }
-      } else if (history && Array.isArray(history)) {
-        // Fallback to client-provided history
-        for (const msg of history.slice(-5)) {
-          const role = (msg.sender === 'student' || msg.role === 'user') ? 'user' : 'model';
-          const text = msg.text || msg.content || "";
-          if (text) contents.push({ role, parts: [{ text }] });
-        }
-      }
-
-      // Add current message
-      contents.push({ role: 'user', parts: [{ text: message }] });
-
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
-      const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents,
-        config: { systemInstruction }
-      });
-
-      const aiResponse = response.text || "No response received. Please try again!";
-
-      // ✅ Save AI response to Supabase
-      await saveChatMessage(
-        sessionId,
-        user_id || null,
-        'assistant',
-        aiResponse,
-        subject,
-        {
-          provider: 'gemini',
-          source: sourceName,
-          has_context: !!retrievedKnowledge
-        }
-      );
-
-      res.json({
-        response: aiResponse,
-        source: sourceName,
-        provider: "gemini",
-        session_id: sessionId
-      });
-
-    } catch (err: any) {
-      console.error("Gemini tutoring error:", err);
-      const errorMsg = "Omo, I experienced a slight glitch! Ask that question again, or keep practicing with syllabus tests.";
-
-      // ✅ Save error response to Supabase
-      await saveChatMessage(sessionId, user_id || null, 'assistant', errorMsg, subject, { provider: 'error-fallback', error: err.message });
-
-      res.json({ response: errorMsg, provider: "error-fallback", session_id: sessionId });
-    }
-  });
+  // Note: The main RAG-powered AI tutor routes are now located in /server/routes/ai.ts 
+  // and mounted as Express middleware. This keeps the server file modular and maintainable.
 
   // ─────────────────────────────────────────────
   // Practice AI Routes (with Supabase Cache)
   // ─────────────────────────────────────────────
-  app.post("/api/practice/ai-tutor", async (req, res) => {
+  app.post("/api/practice/ai-tutor", aiRateLimiter, async (req, res) => {
     try {
       const { question_text, correct_answer, type, options } = req.body;
+      
+      // Input validation
+      if (!question_text || typeof question_text !== 'string' || !question_text.trim()) {
+        return res.status(400).json({ error: "Missing or invalid question_text" });
+      }
+      if (!type || typeof type !== 'string' || !['hint', 'explanation'].includes(type)) {
+        return res.status(400).json({ error: "Invalid type. Must be 'hint' or 'explanation'" });
+      }
+
       const questionHash = crypto.createHash('sha256').update(question_text || "").digest('hex');
 
       // ✅ Check Supabase cache first
@@ -1234,40 +1140,41 @@ Rules:
         return res.json({ response: cachedFromSupabase, cached: true, source: 'supabase' });
       }
 
-      // Check local cache
-      const db = getDb();
-      const cachedLocal = db.ai_cache?.find((c: any) => c.question_hash === questionHash && c.response_type === type);
-      if (cachedLocal) {
-        return res.json({ response: cachedLocal.response_text, cached: true, source: 'local' });
-      }
-
       const geminiApiKey = process.env.GEMINI_API_KEY;
       if (!geminiApiKey) return res.status(500).json({ error: "AI service unavailable" });
 
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
       const prompt = type === 'hint'
         ? `Provide a subtle 1-sentence clue for: "${question_text}" without giving the answer.`
-        : `Provide a 3-step explanation for: "${question_text}". Options: ${JSON.stringify(options || [])}. Correct answer: ${correct_answer}.`;
+        : `Provide a 3-step explanation for: "${question_text}". Options: ${JSON.stringify(options || [])}. Correct answer: ${correct_answer || 'unknown'}.`;
 
-      const response = await ai.models.generateContent({ model: "gemini-1.5-flash", contents: prompt });
+      const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
       const aiText = response.text || "";
 
-      // ✅ Save to both Supabase cache and local cache
+      if (!aiText) throw new Error("Gemini returned empty response text");
+
+      // ✅ Save to Supabase cache only (avoid local db.json bloat)
       await saveAiCacheToSupabase(questionHash, type, aiText);
-      db.ai_cache = db.ai_cache || [];
-      db.ai_cache.push({ question_hash: questionHash, response_type: type, response_text: aiText });
-      saveDb(db);
 
       res.json({ response: aiText, cached: false });
     } catch (err: any) {
       console.error("Practice AI Tutor failed:", err);
-      res.status(500).json({ error: "Failed to generate tutor assistance" });
+      res.status(500).json({ error: "Failed to generate tutor assistance: " + err.message });
     }
   });
 
-  app.post("/api/practice/ai/explain", async (req, res) => {
+  app.post("/api/practice/ai/explain", aiRateLimiter, async (req, res) => {
     try {
       const { question, options, userAnswer, type } = req.body;
+
+      // Input validation
+      if (!question || typeof question !== 'string' || !question.trim()) {
+        return res.status(400).json({ error: "Missing or invalid question" });
+      }
+      if (!userAnswer || typeof userAnswer !== 'string') {
+        return res.status(400).json({ error: "Missing or invalid userAnswer" });
+      }
+
       const questionHash = crypto.createHash('sha256').update(question || "").digest('hex');
       const cacheKey = `${questionHash}_explain_${userAnswer || 'status'}`;
 
@@ -1277,10 +1184,6 @@ Rules:
         return res.json({ explanation: cachedFromSupabase, cached: true, source: 'supabase' });
       }
 
-      const db = getDb();
-      const cached = db.ai_cache?.find((c: any) => c.question_hash === cacheKey);
-      if (cached) return res.json({ explanation: cached.response_text, cached: true, source: 'local' });
-
       const geminiApiKey = process.env.GEMINI_API_KEY;
       if (!geminiApiKey) {
         return res.json({
@@ -1289,27 +1192,26 @@ Rules:
         });
       }
 
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
       const prompt = `You are an expert Nigerian exam tutor (JAMB, WAEC, NECO).
 Question: "${question}"
-Options: ${JSON.stringify(options)}
+Options: ${JSON.stringify(options || [])}
 User's answer status: "${userAnswer}"
 
 Explain in 2-3 sentences why the correct option is right and why the others are wrong. Be concise and curriculum-aligned.`;
 
-      const response = await ai.models.generateContent({ model: "gemini-1.5-flash", contents: prompt });
+      const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt });
       const textContent = response.text || "";
 
-      // ✅ Save to Supabase cache
+      if (!textContent) throw new Error("Gemini returned empty response text");
+
+      // ✅ Save to Supabase cache only (avoid local db.json bloat)
       await saveAiCacheToSupabase(cacheKey, 'analysis', textContent);
-      db.ai_cache = db.ai_cache || [];
-      db.ai_cache.push({ question_hash: cacheKey, response_type: 'analysis', response_text: textContent });
-      saveDb(db);
 
       res.json({ explanation: textContent, cached: false });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Explain route error:", err);
-      res.status(500).json({ error: "Explanation pipeline failed" });
+      res.status(500).json({ error: "Explanation pipeline failed: " + err.message });
     }
   });
 
@@ -1321,7 +1223,7 @@ Explain in 2-3 sentences why the correct option is right and why the others are 
     const geminiApiKey = process.env.GEMINI_API_KEY;
     if (!geminiApiKey) return res.status(500).json({ error: "AI service unavailable" });
 
-    const ai = new GoogleGenAI({ apiKey: geminiApiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+    const ai = new GoogleGenAI({ apiKey: geminiApiKey });
     try {
       const prompt = `You are a competitive CBT AI Academic Coach for WAEC, JAMB, and NECO students.
 Analyze: ${JSON.stringify(performanceSummary || {})}
@@ -1335,7 +1237,7 @@ Generate exactly 4 engaging, action-driven alerts:
 Return JSON array with: title, message, type, priority (high/medium/low), action_link`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
