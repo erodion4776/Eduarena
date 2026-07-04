@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,26 +11,35 @@ import { motion, AnimatePresence } from 'motion/react';
 import { BookOpen, Shield, GraduationCap, User, Eye, EyeOff, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
+type Mode = 'signin' | 'signup';
+type TenantMode = 'create' | 'join';
+
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, signUp, isLoading, error: authError } = useAuthStore();
+  const { user, isInitialized, signIn, signUp, isLoading, error: authError } = useAuthStore();
 
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [mode, setMode] = useState<Mode>('signin');
+  const [tenantMode, setTenantMode] = useState<TenantMode>('join');
+  const [role, setRole] = useState<'student' | 'teacher'>('student');
   const [showPassword, setShowPassword] = useState(false);
 
   // Form states
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'student' | 'teacher' | 'admin'>('student');
   const [schoolName, setSchoolName] = useState('');
-  const [joinCode, setJoinCode] = useState('');
+  const [joinSlug, setJoinSlug] = useState('');
 
   // Local errors
   const [error, setError] = useState<string | null>(null);
 
   const redirectPath = (location.state as any)?.from?.pathname || '/';
+
+  // Redirect if already authenticated
+  if (isInitialized && user) {
+    return <Navigate to="/" replace />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,16 +51,16 @@ export default function Login() {
     }
 
     try {
-      if (isSignUp) {
+      if (mode === 'signup') {
         if (!name) {
           setError('Please provide your name.');
           return;
         }
-        if (role === 'admin' && !schoolName) {
+        if (tenantMode === 'create' && !schoolName) {
           setError('Please provide a school name to register.');
           return;
         }
-        if (role !== 'admin' && !joinCode) {
+        if (tenantMode === 'join' && !joinSlug) {
           setError('Please enter your school join code.');
           return;
         }
@@ -60,10 +69,10 @@ export default function Login() {
           email,
           password,
           name,
-          role: role === 'admin' ? 'student' : (role as any),
-          tenantMode: role === 'admin' ? 'create' : 'join',
-          schoolName: role === 'admin' ? schoolName : undefined,
-          joinSlug: role !== 'admin' ? joinCode : undefined,
+          role,
+          tenantMode,
+          schoolName: tenantMode === 'create' ? schoolName : undefined,
+          joinSlug: tenantMode === 'join' ? joinSlug : undefined,
         });
 
         if (res.error) {
@@ -95,7 +104,7 @@ export default function Login() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-full max-w-lg z-10"
+        className="w-full max-w-md z-10 animate-fade-in"
       >
         <Card className="border-white/10 bg-zinc-900/80 backdrop-blur-md text-white shadow-2xl relative">
           <CardHeader className="text-center pb-4">
@@ -106,14 +115,38 @@ export default function Login() {
               Edu<span className="text-cyan-400">Arena</span>
             </CardTitle>
             <CardDescription className="text-zinc-400 mt-1">
-              {isSignUp ? 'Create your neural learning link' : 'Synchronize with the learning network'}
+              {mode === 'signup' ? 'Create your learning node link' : 'Synchronize with the learning network'}
             </CardDescription>
           </CardHeader>
 
           <CardContent>
+            {/* Mode selection tabs */}
+            <div className="flex mb-6 rounded-xl bg-zinc-800/60 p-1 border border-white/5">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signin');
+                  setError(null);
+                }}
+                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${mode === 'signin' ? 'bg-cyan-500 text-black font-bold shadow-lg shadow-cyan-500/10' : 'text-zinc-400 hover:text-white'}`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signup');
+                  setError(null);
+                }}
+                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${mode === 'signup' ? 'bg-cyan-500 text-black font-bold shadow-lg shadow-cyan-500/10' : 'text-zinc-400 hover:text-white'}`}
+              >
+                Sign Up
+              </button>
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <AnimatePresence mode="wait">
-                {isSignUp && (
+                {mode === 'signup' && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
@@ -129,40 +162,77 @@ export default function Login() {
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500"
-                        required={isSignUp}
+                        required={mode === 'signup'}
                       />
                     </div>
 
+                    {/* School options mode */}
                     <div className="space-y-2">
-                      <Label htmlFor="role" className="text-zinc-300">Select Role</Label>
-                      <Select
-                        value={role}
-                        onValueChange={(val: any) => setRole(val)}
-                      >
-                        <SelectTrigger className="bg-zinc-800/50 border-white/10 text-white focus:ring-cyan-500">
-                          <SelectValue placeholder="Select your role" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-zinc-900 border-white/10 text-white">
-                          <SelectItem value="student" className="hover:bg-zinc-800">
-                            <span className="flex items-center gap-2">
-                              <User className="w-4 h-4 text-cyan-400" /> Student
-                            </span>
-                          </SelectItem>
-                          <SelectItem value="teacher" className="hover:bg-zinc-800">
-                            <span className="flex items-center gap-2">
-                              <GraduationCap className="w-4 h-4 text-yellow-400" /> Teacher
-                            </span>
-                          </SelectItem>
-                          <SelectItem value="admin" className="hover:bg-zinc-800">
-                            <span className="flex items-center gap-2">
-                              <Shield className="w-4 h-4 text-red-400" /> School Administrator
-                            </span>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-zinc-300">School Preference</Label>
+                      <div className="flex rounded-lg bg-zinc-800/60 p-1 border border-white/5">
+                        <button
+                          type="button"
+                          onClick={() => setTenantMode('join')}
+                          className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${tenantMode === 'join' ? 'bg-zinc-700 text-white border border-white/10' : 'text-zinc-400 hover:text-zinc-200'}`}
+                        >
+                          Join a school
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTenantMode('create')}
+                          className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${tenantMode === 'create' ? 'bg-zinc-700 text-white border border-white/10' : 'text-zinc-400 hover:text-zinc-200'}`}
+                        >
+                          Register a school
+                        </button>
+                      </div>
                     </div>
 
-                    {role === 'admin' ? (
+                    {tenantMode === 'join' ? (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="space-y-4"
+                      >
+                        <div className="space-y-2">
+                          <Label htmlFor="joinSlug" className="text-zinc-300 flex items-center gap-1.5">
+                            School Join Code <Sparkles className="w-3.5 h-3.5 text-yellow-400 animate-pulse" />
+                          </Label>
+                          <Input
+                            id="joinSlug"
+                            placeholder="e.g. greenfield-high-a1b2"
+                            value={joinSlug}
+                            onChange={(e) => setJoinSlug(e.target.value)}
+                            className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500 font-mono tracking-wider"
+                            required={mode === 'signup' && tenantMode === 'join'}
+                          />
+                          <p className="text-xs text-zinc-400">Ask your school administrator for the join code.</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="role" className="text-zinc-300">I am a</Label>
+                          <Select
+                            value={role}
+                            onValueChange={(val: 'student' | 'teacher') => setRole(val)}
+                          >
+                            <SelectTrigger className="bg-zinc-800/50 border-white/10 text-white focus:ring-cyan-500">
+                              <SelectValue placeholder="Select your role" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-zinc-900 border-white/10 text-white">
+                              <SelectItem value="student" className="hover:bg-zinc-800">
+                                <span className="flex items-center gap-2">
+                                  <User className="w-4 h-4 text-cyan-400" /> Student
+                                </span>
+                              </SelectItem>
+                              <SelectItem value="teacher" className="hover:bg-zinc-800">
+                                <span className="flex items-center gap-2">
+                                  <GraduationCap className="w-4 h-4 text-yellow-400" /> Teacher
+                                </span>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </motion.div>
+                    ) : (
                       <motion.div
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -177,27 +247,9 @@ export default function Login() {
                           value={schoolName}
                           onChange={(e) => setSchoolName(e.target.value)}
                           className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500"
-                          required={role === 'admin'}
+                          required={mode === 'signup' && tenantMode === 'create'}
                         />
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-2"
-                      >
-                        <Label htmlFor="joinCode" className="text-zinc-300 flex items-center gap-1.5">
-                          School Join Code <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
-                        </Label>
-                        <Input
-                          id="joinCode"
-                          placeholder="e.g. greenfield-high-a1b2"
-                          value={joinCode}
-                          onChange={(e) => setJoinCode(e.target.value)}
-                          className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500 font-mono tracking-wider"
-                          required
-                        />
-                        <p className="text-xs text-zinc-400">Ask your school administrator for the join code.</p>
+                        <p className="text-xs text-zinc-400">You will automatically be registered as the administrator of this school.</p>
                       </motion.div>
                     )}
                   </motion.div>
@@ -218,9 +270,7 @@ export default function Login() {
               </div>
 
               <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label htmlFor="password" className="text-zinc-300">Password</Label>
-                </div>
+                <Label htmlFor="password" className="text-zinc-300">Password</Label>
                 <div className="relative">
                   <Input
                     id="password"
@@ -230,6 +280,7 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500 pr-10"
                     required
+                    minLength={6}
                   />
                   <button
                     type="button"
@@ -264,7 +315,7 @@ export default function Login() {
                     Synchronizing...
                   </>
                 ) : (
-                  isSignUp ? 'Activate Account' : 'Initialize Connection'
+                  mode === 'signup' ? 'Activate Account' : 'Initialize Connection'
                 )}
               </Button>
             </form>
@@ -273,12 +324,12 @@ export default function Login() {
           <CardFooter className="flex justify-center border-t border-white/5 pt-4">
             <button
               onClick={() => {
-                setIsSignUp(!isSignUp);
+                setMode(mode === 'signin' ? 'signup' : 'signin');
                 setError(null);
               }}
               className="text-sm text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
             >
-              {isSignUp
+              {mode === 'signup'
                 ? 'Already registered? Sync existing connection'
                 : 'Request new node activation (Sign Up)'}
             </button>
