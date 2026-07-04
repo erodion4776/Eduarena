@@ -56,17 +56,27 @@ export default function Login() {
           return;
         }
 
-        await signUp({
-          name,
+        const res = await signUp({
           email,
           password,
-          role,
+          name,
+          role: role === 'admin' ? 'student' : (role as any),
+          tenantMode: role === 'admin' ? 'create' : 'join',
           schoolName: role === 'admin' ? schoolName : undefined,
-          joinCode: role !== 'admin' ? joinCode : undefined,
+          joinSlug: role !== 'admin' ? joinCode : undefined,
         });
+
+        if (res.error) {
+          setError(res.error);
+          return;
+        }
         toast.success('Registration successful!');
       } else {
-        await signIn(email, password);
+        const res = await signIn(email, password);
+        if (res.error) {
+          setError(res.error);
+          return;
+        }
         toast.success('Signed in successfully!');
       }
       navigate(redirectPath, { replace: true });
