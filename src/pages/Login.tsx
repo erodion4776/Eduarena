@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, Navigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,16 +8,20 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, Shield, GraduationCap, User, Eye, EyeOff, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { BookOpen, GraduationCap, User, Eye, EyeOff, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 type Mode = 'signin' | 'signup';
 type TenantMode = 'create' | 'join';
 
+interface LocationState {
+  from?: { pathname: string };
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isInitialized, signIn, signUp, isLoading, error: authError } = useAuthStore();
+  const { user, isInitialized, signIn, signUp, isLoading } = useAuthStore();
 
   const [mode, setMode] = useState<Mode>('signin');
   const [tenantMode, setTenantMode] = useState<TenantMode>('join');
@@ -34,16 +38,67 @@ export default function Login() {
   // Local errors
   const [error, setError] = useState<string | null>(null);
 
-  const redirectPath = (location.state as any)?.from?.pathname || '/';
+  // Rate limiting / submission cooldown
+  const [lastAttempt, setLastAttempt] = useState<number>(0);
+  const COOLDOWN_MS = 2000;
 
-  // Redirect if already authenticated
+  // Handles reactive navigation upon successful authentication
+  useEffect(() => {
+    if (isInitialized && user) {
+      const getDefaultPath = (userRole: 'student' | 'teacher' | 'admin'): string => {
+        switch (userRole) {
+          case 'admin':
+            return '/admin';
+          case 'teacher':
+            return '/teacher';
+          default:
+            return '/';
+        }
+      };
+
+      const fallback = getDefaultPath(user.role);
+      const locationState = location.state as LocationState | null;
+      const destination = locationState?.from?.pathname || fallback;
+      navigate(destination, { replace: true });
+    }
+  }, [user, isInitialized, navigate, location.state]);
+
+  // Form field state reset when switching between SignIn & SignUp modes
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setError(null);
+    if (next === 'signin') {
+      setName('');
+      setSchoolName('');
+      setJoinSlug('');
+      setRole('student');
+      setTenantMode('join');
+    }
+  };
+
+  // Redirecting state or null while useEffect handles routing
   if (isInitialized && user) {
-    return <Navigate to="/" replace />;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+          <p className="text-zinc-400 text-sm">Redirecting...</p>
+        </div>
+      </div>
+    );
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Client-side submission cooldown to prevent spamming auth requests
+    const now = Date.now();
+    if (now - lastAttempt < COOLDOWN_MS) {
+      toast.warning('Please wait a moment before trying again.');
+      return;
+    }
+    setLastAttempt(now);
 
     if (!email || !password) {
       setError('Please fill in all required fields.');
@@ -52,15 +107,15 @@ export default function Login() {
 
     try {
       if (mode === 'signup') {
-        if (!name) {
+        if (!name.trim()) {
           setError('Please provide your name.');
           return;
         }
-        if (tenantMode === 'create' && !schoolName) {
+        if (tenantMode === 'create' && !schoolName.trim()) {
           setError('Please provide a school name to register.');
           return;
         }
-        if (tenantMode === 'join' && !joinSlug) {
+        if (tenantMode === 'join' && !joinSlug.trim()) {
           setError('Please enter your school join code.');
           return;
         }
@@ -88,7 +143,6 @@ export default function Login() {
         }
         toast.success('Signed in successfully!');
       }
-      navigate(redirectPath, { replace: true });
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication.');
     }
@@ -104,7 +158,7 @@ export default function Login() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-full max-w-md z-10 animate-fade-in"
+        className="w-full max-w-md z-10"
       >
         <Card className="border-white/10 bg-zinc-900/80 backdrop-blur-md text-white shadow-2xl relative">
           <CardHeader className="text-center pb-4">
@@ -121,30 +175,48 @@ export default function Login() {
 
           <CardContent>
             {/* Mode selection tabs */}
-            <div className="flex mb-6 rounded-xl bg-zinc-800/60 p-1 border border-white/5">
+            <div
+              role="tablist"
+              aria-label="Authentication mode"
+              className="flex mb-6 rounded-xl bg-zinc-800/60 p-1 border border-white/5"
+            >
               <button
                 type="button"
-                onClick={() => {
-                  setMode('signin');
-                  setError(null);
-                }}
-                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${mode === 'signin' ? 'bg-cyan-500 text-black font-bold shadow-lg shadow-cyan-500/10' : 'text-zinc-400 hover:text-white'}`}
+                role="tab"
+                aria-selected={mode === 'signin'}
+                aria-controls="auth-form-panel"
+                onClick={() => switchMode('signin')}
+                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${
+                  mode === 'signin'
+                    ? 'bg-cyan-500 text-black font-bold shadow-lg shadow-cyan-500/10'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
               >
                 Sign In
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setMode('signup');
-                  setError(null);
-                }}
-                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${mode === 'signup' ? 'bg-cyan-500 text-black font-bold shadow-lg shadow-cyan-500/10' : 'text-zinc-400 hover:text-white'}`}
+                role="tab"
+                aria-selected={mode === 'signup'}
+                aria-controls="auth-form-panel"
+                onClick={() => switchMode('signup')}
+                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${
+                  mode === 'signup'
+                    ? 'bg-cyan-500 text-black font-bold shadow-lg shadow-cyan-500/10'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
               >
                 Sign Up
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form
+              id="auth-form-panel"
+              role="tabpanel"
+              aria-label={`${mode === 'signin' ? 'Sign In' : 'Sign Up'} Form`}
+              onSubmit={handleSubmit}
+              className="space-y-4"
+            >
               <AnimatePresence mode="wait">
                 {mode === 'signup' && (
                   <motion.div
@@ -162,7 +234,6 @@ export default function Login() {
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500"
-                        required={mode === 'signup'}
                       />
                     </div>
 
@@ -173,14 +244,22 @@ export default function Login() {
                         <button
                           type="button"
                           onClick={() => setTenantMode('join')}
-                          className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${tenantMode === 'join' ? 'bg-zinc-700 text-white border border-white/10' : 'text-zinc-400 hover:text-zinc-200'}`}
+                          className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${
+                            tenantMode === 'join'
+                              ? 'bg-zinc-700 text-white border border-white/10'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          }`}
                         >
                           Join a school
                         </button>
                         <button
                           type="button"
                           onClick={() => setTenantMode('create')}
-                          className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${tenantMode === 'create' ? 'bg-zinc-700 text-white border border-white/10' : 'text-zinc-400 hover:text-zinc-200'}`}
+                          className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${
+                            tenantMode === 'create'
+                              ? 'bg-zinc-700 text-white border border-white/10'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          }`}
                         >
                           Register a school
                         </button>
@@ -203,7 +282,6 @@ export default function Login() {
                             value={joinSlug}
                             onChange={(e) => setJoinSlug(e.target.value)}
                             className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500 font-mono tracking-wider"
-                            required={mode === 'signup' && tenantMode === 'join'}
                           />
                           <p className="text-xs text-zinc-400">Ask your school administrator for the join code.</p>
                         </div>
@@ -214,7 +292,7 @@ export default function Login() {
                             value={role}
                             onValueChange={(val: 'student' | 'teacher') => setRole(val)}
                           >
-                            <SelectTrigger className="bg-zinc-800/50 border-white/10 text-white focus:ring-cyan-500">
+                            <SelectTrigger id="role" className="bg-zinc-800/50 border-white/10 text-white focus:ring-cyan-500">
                               <SelectValue placeholder="Select your role" />
                             </SelectTrigger>
                             <SelectContent className="bg-zinc-900 border-white/10 text-white">
@@ -247,7 +325,6 @@ export default function Login() {
                           value={schoolName}
                           onChange={(e) => setSchoolName(e.target.value)}
                           className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500"
-                          required={mode === 'signup' && tenantMode === 'create'}
                         />
                         <p className="text-xs text-zinc-400">You will automatically be registered as the administrator of this school.</p>
                       </motion.div>
@@ -265,7 +342,6 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500"
-                  required
                 />
               </div>
 
@@ -279,30 +355,44 @@ export default function Login() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500 pr-10"
-                    required
                     minLength={6}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {showPassword && (
+                  <p className="text-xs text-yellow-400 flex items-center gap-1 mt-1 animate-fade-in">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    Password is visible — ensure no one can see your screen.
+                  </p>
+                )}
               </div>
 
-              {/* Error messages */}
-              {(error || authError) && (
-                <motion.div
-                  initial={{ opacity: 0, y: -5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-start gap-2"
-                >
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{error || authError}</span>
-                </motion.div>
-              )}
+              {/* Error messages via accessible live-region */}
+              <div
+                role="alert"
+                aria-live="assertive"
+                aria-atomic="true"
+                className="min-h-0"
+              >
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-start gap-2"
+                  >
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+                    <span>{error}</span>
+                  </motion.div>
+                )}
+              </div>
 
               <Button
                 type="submit"
@@ -323,10 +413,7 @@ export default function Login() {
 
           <CardFooter className="flex justify-center border-t border-white/5 pt-4">
             <button
-              onClick={() => {
-                setMode(mode === 'signin' ? 'signup' : 'signin');
-                setError(null);
-              }}
+              onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
               className="text-sm text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
             >
               {mode === 'signup'
