@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { syllabusData } from '../data/syllabus';
+import { supabase } from '@/src/lib/supabase';
 import { 
   Calendar, 
   Brain, 
@@ -92,6 +93,11 @@ export default function StudyPlanner() {
   const [subjectSearch, setSubjectSearch] = useState<string>('');
   const [mobileTab, setMobileTab] = useState<'calendar' | 'focus'>('calendar');
 
+  // Supabase Database Syllabus Connection State
+  const [dbSyllabusData, setDbSyllabusData] = useState<Record<string, any[]>>({});
+  const [isDbLoading, setIsDbLoading] = useState(false);
+  const [dbSyllabusCount, setDbSyllabusCount] = useState(0);
+
   const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   // Load the personalized study plan for this specific student from isolated local storage
@@ -108,16 +114,165 @@ export default function StudyPlanner() {
     }
   }, [user]);
 
+  // Fetch dynamic syllabus topics from Supabase 'knowledge_base' or fallback to 'document_chunks'
+  useEffect(() => {
+    async function fetchSyllabusFromSupabase() {
+      const sbClient = supabase;
+      if (!sbClient) {
+        console.warn('Supabase client not initialized or credentials missing.');
+        return;
+      }
+
+      setIsDbLoading(true);
+      try {
+        let rows: any[] = [];
+        let sourceUsed = '';
+
+        // Try 'knowledge_base' table first
+        const { data: kbData, error: kbError } = await sbClient
+          .from('knowledge_base')
+          .select('*');
+
+        if (!kbError && kbData && kbData.length > 0) {
+          rows = kbData;
+          sourceUsed = 'knowledge_base';
+        } else {
+          if (kbError) console.log('knowledge_base fetch error or table missing:', kbError.message);
+          
+          // Fallback to 'document_chunks' table which also maps syllabus content
+          const { data: chunkData, error: chunkError } = await sbClient
+            .from('document_chunks')
+            .select('subject, topic, content');
+            
+          if (!chunkError && chunkData && chunkData.length > 0) {
+            rows = chunkData;
+            sourceUsed = 'document_chunks';
+          } else {
+            if (chunkError) console.log('document_chunks fetch error:', chunkError.message);
+          }
+        }
+
+        if (rows.length > 0) {
+          const parsedSyllabus: Record<string, any[]> = {};
+          let parsedCount = 0;
+
+          rows.forEach((row) => {
+            const rawSubject = row.subject || row.subject_name || 'General';
+            const subject = rawSubject.trim();
+            
+            // If the subject name is general like "Chemistry" or "Physics", map it to both "JAMB Chemistry" and "Chemistry" 
+            // so it seamlessly matches either active view
+            const isJambOnly = subject.toUpperCase().startsWith('JAMB') || row.exam_type?.toUpperCase() === 'JAMB';
+            const isWaecOnly = subject.toUpperCase().startsWith('WAEC') || row.exam_type?.toUpperCase() === 'WAEC';
+
+            let targetSubjectKeys: string[] = [];
+            if (isJambOnly) {
+              targetSubjectKeys.push(subject.toUpperCase().startsWith('JAMB') ? subject : `JAMB ${subject}`);
+            } else if (isWaecOnly) {
+              targetSubjectKeys.push(subject.toUpperCase().startsWith('WAEC') ? subject : subject);
+            } else {
+              // Neutral subject: map to both so both JAMB and WAEC selection can access it
+              const cleanSubject = subject.replace(/^(JAMB|WAEC)\s+/i, '');
+              targetSubjectKeys.push(`JAMB ${cleanSubject}`);
+              targetSubjectKeys.push(cleanSubject);
+            }
+
+            const topicBase = row.topic || row.topic_name || row.title || 'General Core Concept';
+            const subtopicBase = row.subtopic || row.subtopic_name || '';
+            const topicText = subtopicBase ? `${topicBase} (${subtopicBase})` : topicBase;
+            
+            // Extract or generate objectives safely
+            let objectives: string[] = [];
+            if (Array.isArray(row.objectives)) {
+              objectives = row.objectives;
+            } else if (typeof row.objectives === 'string' && row.objectives.trim()) {
+              try {
+                objectives = JSON.parse(row.objectives);
+              } catch {
+                objectives = row.objectives.split('\n').map((s: string) => s.trim()).filter(Boolean);
+              }
+            } else if (row.content || row.description) {
+              const text = row.content || row.description;
+              objectives = text
+                .split(/[.!?\n]+/)
+                .map((s: string) => s.trim())
+                .filter((s: string) => s.length > 12 && !s.startsWith('-') && !s.startsWith('*'))
+                .slice(0, 4);
+            }
+
+            if (objectives.length === 0) {
+              objectives = [
+                'Review core definitions and context',
+                'Analyze key mechanisms and methodologies',
+                'Practice exam-style review problems'
+              ];
+            }
+
+            targetSubjectKeys.forEach(subjectKey => {
+              if (!parsedSyllabus[subjectKey]) {
+                parsedSyllabus[subjectKey] = [];
+              }
+
+              // Avoid adding identical topic names under same subject
+              const exists = parsedSyllabus[subjectKey].some(t => t.topic.toLowerCase() === topicText.toLowerCase());
+              if (!exists) {
+                parsedSyllabus[subjectKey].push({
+                  sn: String(parsedSyllabus[subjectKey].length + 1),
+                  topic: topicText,
+                  objectives,
+                  examType: row.exam_type || (subjectKey.startsWith('JAMB') ? 'JAMB' : 'WAEC'),
+                  subject: subjectKey.replace('JAMB ', ''),
+                  isFromDb: true,
+                  dbSource: sourceUsed
+                });
+                parsedCount++;
+              }
+            });
+          });
+
+          setDbSyllabusData(parsedSyllabus);
+          setDbSyllabusCount(parsedCount);
+          toast.success(`Connected to Supabase! Loaded ${parsedCount} dynamic topics from ${sourceUsed}.`);
+        }
+      } catch (err: any) {
+        console.error('Failed to load syllabus data from database:', err);
+      } finally {
+        setIsDbLoading(false);
+      }
+    }
+
+    fetchSyllabusFromSupabase();
+  }, [user]);
+
+  // Combine static local syllabus data with real-time Supabase database syllabus data
+  const combinedSyllabusData = useMemo(() => {
+    const combined = { ...syllabusData };
+    
+    // Merge database topics
+    Object.entries(dbSyllabusData).forEach(([subjectKey, topics]) => {
+      if (combined[subjectKey]) {
+        const existingTopics = combined[subjectKey];
+        // Only append topics that do not exist yet in local data
+        const newTopics = topics.filter(t => !existingTopics.some(et => et.topic.toLowerCase() === t.topic.toLowerCase()));
+        combined[subjectKey] = [...existingTopics, ...newTopics];
+      } else {
+        combined[subjectKey] = topics;
+      }
+    });
+    
+    return combined;
+  }, [dbSyllabusData]);
+
   // Dynamically group syllabus keys based on user selection
   const availableSyllabusKeys = useMemo(() => {
-    return Object.keys(syllabusData).filter(key => {
+    return Object.keys(combinedSyllabusData).filter(key => {
       if (examType === 'JAMB') {
         return key.startsWith('JAMB');
       } else {
         return !key.startsWith('JAMB');
       }
     });
-  }, [examType]);
+  }, [examType, combinedSyllabusData]);
 
   const filteredSyllabusKeys = useMemo(() => {
     if (!subjectSearch) return availableSyllabusKeys;
@@ -154,7 +309,7 @@ export default function StudyPlanner() {
     // Loop through selected subjects, fetch their official modules from syllabus knowledge base, shuffle uniquely, and assign
     let taskCounter = 1;
     selectedSubjects.forEach(subjectKey => {
-      const rawTopics = syllabusData[subjectKey] || [];
+      const rawTopics = combinedSyllabusData[subjectKey] || [];
       if (rawTopics.length === 0) return;
 
       // Unique shuffle of official topics using the student's personal profile seed
@@ -333,10 +488,25 @@ export default function StudyPlanner() {
 
                 <Card className="bg-zinc-900 border-white/5 rounded-2xl overflow-hidden shadow-xl">
                   <CardHeader className="border-b border-white/5 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <CardTitle className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
-                      <BookOpen className="w-4 h-4 text-cyan-400" />
-                      2. Choose Subject Focus ({selectedSubjects.length} selected)
-                    </CardTitle>
+                    <div className="flex flex-col gap-1.5">
+                      <CardTitle className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                        <BookOpen className="w-4 h-4 text-cyan-400" />
+                        2. Choose Subject Focus ({selectedSubjects.length} selected)
+                      </CardTitle>
+                      {isDbLoading ? (
+                        <div className="flex items-center gap-1.5 text-[10px] text-cyan-400 font-bold bg-cyan-950/45 border border-cyan-500/20 px-2 py-0.5 rounded-full w-fit animate-pulse">
+                          <Database className="w-3 h-3 animate-spin" /> Fetching Supabase knowledge...
+                        </div>
+                      ) : dbSyllabusCount > 0 ? (
+                        <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold bg-emerald-950/45 border border-emerald-500/20 px-2 py-0.5 rounded-full w-fit">
+                          <Database className="w-3 h-3" /> Live Supabase Connection: {dbSyllabusCount} dynamic topics active
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-[10px] text-amber-400 font-bold bg-amber-950/45 border border-amber-500/20 px-2 py-0.5 rounded-full w-fit">
+                          <AlertCircle className="w-3 h-3" /> Supabase empty/offline: using local cached modules
+                        </div>
+                      )}
+                    </div>
                     <div className="relative w-full sm:w-48">
                       <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-zinc-500" />
                       <Input
@@ -353,6 +523,7 @@ export default function StudyPlanner() {
                       {filteredSyllabusKeys.map(subjectKey => {
                         const isSelected = selectedSubjects.includes(subjectKey);
                         const cleanName = subjectKey.replace('JAMB ', '');
+                        const hasDbTopics = combinedSyllabusData[subjectKey]?.some((t: any) => t.isFromDb);
                         return (
                           <button
                             key={subjectKey}
@@ -363,8 +534,13 @@ export default function StudyPlanner() {
                                 : 'bg-zinc-950 border-white/5 text-zinc-400 hover:text-white hover:border-white/10'
                             }`}
                           >
-                            <span className="text-xs font-bold uppercase tracking-wide truncate max-w-[80%]">
+                            <span className="text-xs font-bold uppercase tracking-wide truncate max-w-[80%] flex items-center gap-1.5">
                               {cleanName}
+                              {hasDbTopics && (
+                                <span className="text-[9px] font-extrabold text-cyan-400 bg-cyan-950/50 border border-cyan-500/30 px-1 py-0.2 rounded scale-90" title="This subject contains topics loaded live from Supabase 'knowledge_base'">
+                                  DB
+                                </span>
+                              )}
                             </span>
                             <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
                               isSelected ? 'bg-cyan-500 border-cyan-500 text-black' : 'border-zinc-700'
