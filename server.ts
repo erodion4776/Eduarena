@@ -1673,6 +1673,51 @@ Return JSON array with: title, message, type, priority (high/medium/low), action
 
   app.post("/api/ai/predict-topics", async (req, res) => { res.json({ message: "Prediction generated" }); });
   app.post("/api/ai/study-plan", async (req, res) => { res.json({ message: "Study plan generated" }); });
+
+  app.post("/api/ai/performance-insight", async (req, res) => {
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      return res.json({
+        insight: "AI is currently offline because the GEMINI_API_KEY is not configured on the server. Please add it via the settings menu, or complete more practice sessions to activate insights."
+      });
+    }
+
+    const { stats, history, mastery } = req.body;
+    
+    const prompt = `
+      You are an elite AI Academic Performance Coach for Edu Arena, an exam preparation platform for African standardized exams (JAMB, WAEC, NECO).
+      Analyze the student's learning progress and generate a highly personalized, encouraging, and actionable study recommendation.
+
+      Student Performance Data:
+      - Average Score: ${stats?.avgScore ?? 'No scores yet'}%
+      - Exam Readiness Estimate: ${stats?.readiness ?? 'No estimation yet'}%
+      - Total Practice Sessions: ${stats?.totalExams ?? 0}
+      - Total Questions Answered: ${stats?.totalQuestions ?? 0}
+      
+      Recent Session History:
+      ${JSON.stringify(history?.slice(0, 5) || [], null, 2)}
+
+      Topic Mastery Levels:
+      ${JSON.stringify(mastery || [], null, 2)}
+
+      Provide your response in a supportive, professional academic coaching style. 
+      Point out their clearest strengths (e.g., highest-scoring subjects/topics), call out 1-2 exact weak areas that need immediate practice, and give them a structured 3-step action plan to improve. Keep the summary under 160 words, format with paragraphs, and use elegant markdown (bold highlights). Do not use placeholders or generic phrases.
+    `;
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+      const insightText = response.text || "Keep up the hard work! Continue taking practice sessions to unlock more personalized AI coaching.";
+      res.json({ insight: insightText });
+    } catch (error: any) {
+      console.error("Failed to generate AI performance insight:", error);
+      res.status(500).json({ error: "Failed to generate AI performance insight" });
+    }
+  });
+
   app.get("/api/teacher/class-performance", (req, res) => { res.json({ classAverage: 72, topStudents: [{ name: "Alice", score: 95 }], commonStruggleTopics: ["Photosynthesis"] }); });
   app.post("/api/teacher/generate-assignment", async (req, res) => { const { topic, difficulty } = req.body; res.json({ assignment: `Quiz for ${topic} at ${difficulty} level.` }); });
   app.post("/api/teacher/summarize-student", async (req, res) => { const { studentName } = req.body; res.json({ summary: `${studentName} shows great progress but needs more practice on advanced topics.` }); });
