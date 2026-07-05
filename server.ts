@@ -1718,6 +1718,42 @@ Return JSON array with: title, message, type, priority (high/medium/low), action
     }
   });
 
+  app.post("/api/ai/leaderboard-insight", async (req, res) => {
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      return res.json({
+        insight: "You're doing fantastic! Take another practice CBT test or challenge today to outpace your peers and secure a spot in the top 10."
+      });
+    }
+
+    const { rank, points, topUsers, activeChallenge } = req.body;
+
+    const prompt = `
+      You are an elite AI Academic Performance Coach for Edu Arena, an African exam-prep platform.
+      Analyze the student's competitive standing on the Leaderboard and generate a brief, highly motivating, and strategic tip to help them climb.
+
+      Leaderboard Context:
+      - Current Student Rank: #${rank ?? '12'}
+      - Current Student Points: ${points ?? '0'} XP
+      - Top Competitors: ${JSON.stringify(topUsers || [], null, 2)}
+      - Active Weekly Challenge: ${activeChallenge ?? 'WAEC/JAMB Mastery Drive'}
+
+      Provide a short, punchy 2-sentence response. It must be encouraging, refer directly to their current rank (#${rank}), and suggest a specific strategy (like doing the active weekly challenge or focusing on their high-yield topic categories to outpace others). Under 60 words. No placeholders.
+    `;
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+      res.json({ insight: response.text || "Keep practicing! You are close to overtaking your next rival." });
+    } catch (error) {
+      console.error("Failed to generate leaderboard insight:", error);
+      res.json({ insight: "Keep pushing! Completing one more full WAEC exam will give you the XP boost needed to advance." });
+    }
+  });
+
   app.get("/api/teacher/class-performance", (req, res) => { res.json({ classAverage: 72, topStudents: [{ name: "Alice", score: 95 }], commonStruggleTopics: ["Photosynthesis"] }); });
   app.post("/api/teacher/generate-assignment", async (req, res) => { const { topic, difficulty } = req.body; res.json({ assignment: `Quiz for ${topic} at ${difficulty} level.` }); });
   app.post("/api/teacher/summarize-student", async (req, res) => { const { studentName } = req.body; res.json({ summary: `${studentName} shows great progress but needs more practice on advanced topics.` }); });
