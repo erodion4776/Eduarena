@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,10 +27,15 @@ import {
   Calendar
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/src/lib/supabase';
+import { useAuthStore } from '@/src/store/useAuthStore';
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<'profile' | 'ai' | 'notifications' | 'exams' | 'gamification' | 'security' | 'appearance' | 'data' | 'danger'>('profile');
   const [expandedMobileTab, setExpandedMobileTab] = useState<string | null>('profile');
+  
+  const { user, setUser } = useAuthStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load state from localStorage or defaults
   const [profile, setProfile] = useState({
@@ -90,71 +95,272 @@ export default function Settings() {
     fontSize: 'medium' // small, medium, large
   });
 
-  // Load settings on mount
+  // Load settings on mount and sync with backend
   useEffect(() => {
-    const savedProfile = localStorage.getItem('edu_profile');
-    const savedAi = localStorage.getItem('edu_ai_settings');
-    const savedNotifs = localStorage.getItem('edu_notif_settings');
-    const savedExams = localStorage.getItem('edu_exam_prefs');
-    const savedGame = localStorage.getItem('edu_game_settings');
-    const savedPrivacy = localStorage.getItem('edu_privacy_settings');
-    const savedAppearance = localStorage.getItem('edu_appearance');
+    const loadSettings = async () => {
+      // 1. Load from localStorage first for immediate UI responsiveness
+      const savedProfile = localStorage.getItem('edu_profile');
+      const savedAi = localStorage.getItem('edu_ai_settings');
+      const savedNotifs = localStorage.getItem('edu_notif_settings');
+      const savedExams = localStorage.getItem('edu_exam_prefs');
+      const savedGame = localStorage.getItem('edu_game_settings');
+      const savedPrivacy = localStorage.getItem('edu_privacy_settings');
+      const savedAppearance = localStorage.getItem('edu_appearance');
 
-    if (savedProfile) setProfile(JSON.parse(savedProfile));
-    if (savedAi) setAiSettings(JSON.parse(savedAi));
-    if (savedNotifs) setNotificationSettings(JSON.parse(savedNotifs));
-    if (savedExams) setExamPreferences(JSON.parse(savedExams));
-    if (savedGame) setGamificationSettings(JSON.parse(savedGame));
-    if (savedPrivacy) setPrivacySettings(JSON.parse(savedPrivacy));
-    if (savedAppearance) setAppearance(JSON.parse(savedAppearance));
-  }, []);
+      if (savedProfile) setProfile(JSON.parse(savedProfile));
+      if (savedAi) setAiSettings(JSON.parse(savedAi));
+      if (savedNotifs) setNotificationSettings(JSON.parse(savedNotifs));
+      if (savedExams) setExamPreferences(JSON.parse(savedExams));
+      if (savedGame) setGamificationSettings(JSON.parse(savedGame));
+      if (savedPrivacy) setPrivacySettings(JSON.parse(savedPrivacy));
+      if (savedAppearance) setAppearance(JSON.parse(savedAppearance));
+
+      // 2. If logged in with a real account, load from backend/Supabase and update local storage & state
+      if (user && user.id !== '1') {
+        try {
+          const res = await fetch('/api/user/profile');
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.user) {
+              const u = data.user;
+              const fetchedProfile = {
+                name: u.name || user.name || 'Student',
+                email: u.email || user.email || '',
+                school: u.school || '',
+                level: typeof u.level === 'number' ? `SS ${u.level}` : (u.level || 'SS 3'),
+                examTarget: u.examTarget || 'JAMB',
+                avatar: u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&auto=format&fit=crop'
+              };
+              setProfile(fetchedProfile);
+              localStorage.setItem('edu_profile', JSON.stringify(fetchedProfile));
+
+              if (u.aiSettings) {
+                setAiSettings(u.aiSettings);
+                localStorage.setItem('edu_ai_settings', JSON.stringify(u.aiSettings));
+              }
+              if (u.notificationSettings) {
+                setNotificationSettings(u.notificationSettings);
+                localStorage.setItem('edu_notif_settings', JSON.stringify(u.notificationSettings));
+              }
+              if (u.examPreferences) {
+                setExamPreferences(u.examPreferences);
+                localStorage.setItem('edu_exam_prefs', JSON.stringify(u.examPreferences));
+              }
+              if (u.gamificationSettings) {
+                setGamificationSettings(u.gamificationSettings);
+                localStorage.setItem('edu_game_settings', JSON.stringify(u.gamificationSettings));
+              }
+              if (u.privacySettings) {
+                setPrivacySettings(u.privacySettings);
+                localStorage.setItem('edu_privacy_settings', JSON.stringify(u.privacySettings));
+              }
+              if (u.appearance) {
+                setAppearance(u.appearance);
+                localStorage.setItem('edu_appearance', JSON.stringify(u.appearance));
+              }
+
+              // Sync baseline user credentials in auth store
+              setUser({
+                ...user,
+                name: u.name,
+                school_id: u.school,
+                level: typeof u.level === 'number' ? u.level : (parseInt(u.level?.replace(/[^0-9]/g, '')) || user.level)
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Failed to sync profile from backend:', err);
+        }
+      }
+    };
+
+    loadSettings();
+  }, [user]);
 
   // Save Function
-  const handleSave = (section: string, data: any, storageKey: string) => {
+  const handleSave = async (section: string, data: any, storageKey: string, syncPayload?: any) => {
     localStorage.setItem(storageKey, JSON.stringify(data));
+
+    if (user && user.id !== '1') {
+      try {
+        const payload = syncPayload || { [storageKey.replace('edu_', '')]: data };
+        const res = await fetch('/api/user/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          const resData = await res.json();
+          if (resData && resData.user) {
+            setUser({
+              ...user,
+              name: resData.user.name,
+              school_id: resData.user.school,
+              level: resData.user.level
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to sync settings to server:', err);
+      }
+    }
+
     toast.success(`${section} saved successfully!`);
   };
 
   const handleSaveForTab = (tabId: string) => {
     switch (tabId) {
-      case 'profile':
-        handleSave('Profile Settings', profile, 'edu_profile');
+      case 'profile': {
+        const numericLevel = parseInt(profile.level.replace(/[^0-9]/g, '')) || 3;
+        handleSave('Profile Settings', profile, 'edu_profile', {
+          name: profile.name,
+          school: profile.school,
+          level: numericLevel,
+          examTarget: profile.examTarget,
+          avatar: profile.avatar
+        });
         break;
+      }
       case 'ai':
-        handleSave('AI Tutor Configuration', aiSettings, 'edu_ai_settings');
+        handleSave('AI Tutor Configuration', aiSettings, 'edu_ai_settings', { aiSettings });
         break;
       case 'notifications':
-        handleSave('Notification Controls', notificationSettings, 'edu_notif_settings');
+        handleSave('Notification Controls', notificationSettings, 'edu_notif_settings', { notificationSettings });
         break;
       case 'exams':
-        handleSave('Exam & Study Settings', examPreferences, 'edu_exam_prefs');
+        handleSave('Exam & Study Settings', examPreferences, 'edu_exam_prefs', { examPreferences });
         break;
       case 'gamification':
-        handleSave('Gamification Controls', gamificationSettings, 'edu_game_settings');
+        handleSave('Gamification Controls', gamificationSettings, 'edu_game_settings', { gamificationSettings });
         break;
       case 'security':
-        handleSave('Security & Privacy Settings', privacySettings, 'edu_privacy_settings');
+        handleSave('Security & Privacy Settings', privacySettings, 'edu_privacy_settings', { privacySettings });
         break;
       case 'appearance':
-        handleSave('Appearance Settings', appearance, 'edu_appearance');
+        handleSave('Appearance Settings', appearance, 'edu_appearance', { appearance });
         break;
       case 'data':
-        handleSave('AI Memory Preferences', privacySettings, 'edu_privacy_settings');
+        handleSave('AI Memory Preferences', privacySettings, 'edu_privacy_settings', { privacySettings });
         break;
     }
   };
 
-  // Profile Avatar Upload trigger (Mock)
-  const handleAvatarUpload = () => {
+  // Roll premium random default avatar
+  const handleRollRandomAvatar = () => {
     const avatars = [
       'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=256&h=256&auto=format&fit=crop',
       'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=256&h=256&auto=format&fit=crop',
       'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?q=80&w=256&h=256&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&h=256&auto=format&fit=crop'
+      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&h=256&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&auto=format&fit=crop'
     ];
     const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)];
     setProfile(prev => ({ ...prev, avatar: randomAvatar }));
-    toast.info("Ran random profile banner avatar generation. Don't forget to Save!");
+    toast.info("Rolled random profile avatar! Click 'Save' or 'Save Changes' to commit.");
+  };
+
+  // Robust custom avatar image file upload (Supabase Storage upload with Base64 fallback)
+  const handleAvatarUpload = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const toastId = toast.loading("Processing and uploading avatar image...");
+
+    // Helper for local Base64 fallback
+    const useBase64Fallback = () => {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64data = reader.result as string;
+        setProfile(prev => ({ ...prev, avatar: base64data }));
+        localStorage.setItem('edu_profile', JSON.stringify({ ...profile, avatar: base64data }));
+        
+        if (user && user.id !== '1') {
+          const numericLevel = parseInt(profile.level.replace(/[^0-9]/g, '')) || 3;
+          await fetch('/api/user/profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: profile.name,
+              school: profile.school,
+              level: numericLevel,
+              examTarget: profile.examTarget,
+              avatar: base64data
+            })
+          });
+        }
+        toast.dismiss(toastId);
+        toast.success("Avatar updated successfully (stored locally as high-durability Base64)!");
+      };
+      reader.readAsDataURL(file);
+    };
+
+    // If guest mode or supabase not initialized, use Base64 fallback immediately
+    if (!supabase || !user || user.id === '1') {
+      useBase64Fallback();
+      return;
+    }
+
+    try {
+      const fileExt = file.name.split('.').pop() || 'png';
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `avatars/${fileName}`;
+
+      // Upload file
+      let { data, error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+      // Auto-create bucket if missing
+      if (uploadError && (uploadError.message.includes('bucket') || (uploadError as any).status === 404)) {
+        try {
+          const { error: bucketError } = await supabase.storage.createBucket('avatars', { public: true });
+          if (!bucketError) {
+            // Retry upload
+            const retryResult = await supabase.storage.from('avatars').upload(filePath, file, { cacheControl: '3600', upsert: true });
+            uploadError = retryResult.error;
+            data = retryResult.data;
+          }
+        } catch (bucketErr) {
+          console.warn("Could not auto-create storage bucket 'avatars':", bucketErr);
+        }
+      }
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Retrieve public URL
+      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const publicUrl = publicUrlData.publicUrl;
+
+      // Update state and storage
+      setProfile(prev => ({ ...prev, avatar: publicUrl }));
+      localStorage.setItem('edu_profile', JSON.stringify({ ...profile, avatar: publicUrl }));
+
+      // Sync immediately with backend profile DB
+      const numericLevel = parseInt(profile.level.replace(/[^0-9]/g, '')) || 3;
+      await fetch('/api/user/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: profile.name,
+          school: profile.school,
+          level: numericLevel,
+          examTarget: profile.examTarget,
+          avatar: publicUrl
+        })
+      });
+
+      toast.dismiss(toastId);
+      toast.success("Avatar uploaded and synced successfully to Supabase cloud storage!");
+    } catch (err) {
+      console.warn("Supabase Storage error, switching to Base64 fallback:", err);
+      useBase64Fallback();
+    }
   };
 
   // Wiping Database / Local State Mocks
@@ -226,6 +432,13 @@ export default function Settings() {
             <Card className="bg-zinc-900 border-white/10 p-5 sm:p-6 md:p-8 rounded-3xl space-y-6 md:space-y-8">
               <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-white/5">
                 <div className="relative group">
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleFileChange} 
+                    accept="image/*" 
+                    className="hidden" 
+                  />
                   <img 
                     src={profile.avatar} 
                     alt="Profile" 
@@ -233,7 +446,8 @@ export default function Settings() {
                   />
                   <button 
                     onClick={handleAvatarUpload}
-                    className="absolute inset-0 bg-black/60 rounded-3xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                    title="Upload Custom Avatar"
+                    className="absolute inset-0 bg-black/60 rounded-3xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"
                   >
                     <Upload className="w-5 h-5 text-white" />
                   </button>
@@ -241,9 +455,14 @@ export default function Settings() {
                 <div className="text-center sm:text-left">
                   <h3 className="font-bold text-lg">{profile.name}</h3>
                   <p className="text-sm text-zinc-400">{profile.email}</p>
-                  <Button onClick={handleAvatarUpload} variant="outline" className="mt-2 rounded-xl text-xs py-1 h-8">
-                    Roll Random Avatar
-                  </Button>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <Button onClick={handleAvatarUpload} variant="outline" className="rounded-xl text-xs py-1 h-8 flex items-center gap-1.5 bg-zinc-950 border-white/10 hover:bg-zinc-900">
+                      <Upload className="w-3.5 h-3.5" /> Upload Custom Image
+                    </Button>
+                    <Button onClick={handleRollRandomAvatar} variant="ghost" className="rounded-xl text-xs py-1 h-8 text-zinc-400 hover:text-white hover:bg-white/5">
+                      Roll Random Avatar
+                    </Button>
+                  </div>
                 </div>
               </div>
 

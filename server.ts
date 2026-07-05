@@ -712,7 +712,19 @@ async function startServer() {
 
     const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
     res.cookie("token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 24 * 60 * 60 * 1000 });
-    res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, points: user.points, level: user.level } });
+    res.json({ 
+      user: { 
+        id: user.id, 
+        name: user.name, 
+        email: user.email, 
+        role: user.role, 
+        points: user.points, 
+        level: user.level,
+        avatar: user.avatar || '',
+        school: user.school || user.school_id || '',
+        examTarget: user.examTarget || 'JAMB'
+      } 
+    });
   });
 
   app.get("/api/auth/me", (req, res) => {
@@ -723,7 +735,19 @@ async function startServer() {
       const db = getDb();
       const user = db.users.find((u: any) => u.id === decoded.userId);
       if (!user) return res.status(404).json({ error: "User not found" });
-      res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, points: user.points, level: user.level } });
+      res.json({ 
+        user: { 
+          id: user.id, 
+          name: user.name, 
+          email: user.email, 
+          role: user.role, 
+          points: user.points, 
+          level: user.level,
+          avatar: user.avatar || '',
+          school: user.school || user.school_id || '',
+          examTarget: user.examTarget || 'JAMB'
+        } 
+      });
     } catch {
       res.status(401).json({ error: "Invalid token" });
     }
@@ -751,6 +775,106 @@ async function startServer() {
       next();
     });
   }
+
+  // ─────────────────────────────────────────────
+  // User Profile & Settings Management
+  // ─────────────────────────────────────────────
+  app.get("/api/user/profile", requireAuth, (req, res) => {
+    const db = getDb();
+    const user = db.users.find((u: any) => u.id === (req as any).user.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        points: user.points || 0,
+        level: user.level || 1,
+        school: user.school || user.school_id || '',
+        avatar: user.avatar || '',
+        examTarget: user.examTarget || 'JAMB',
+        aiSettings: user.aiSettings || null,
+        notificationSettings: user.notificationSettings || null,
+        examPreferences: user.examPreferences || null,
+        gamificationSettings: user.gamificationSettings || null,
+        privacySettings: user.privacySettings || null,
+        appearance: user.appearance || null
+      }
+    });
+  });
+
+  app.post("/api/user/profile", requireAuth, async (req, res) => {
+    const { 
+      name, school, level, examTarget, avatar,
+      aiSettings, notificationSettings, examPreferences, gamificationSettings, privacySettings, appearance 
+    } = req.body;
+
+    const db = getDb();
+    const userIndex = db.users.findIndex((u: any) => u.id === (req as any).user.userId);
+    if (userIndex === -1) return res.status(404).json({ error: "User not found" });
+
+    const user = db.users[userIndex];
+
+    // Update fields
+    if (name !== undefined) user.name = name;
+    if (school !== undefined) user.school = school;
+    if (level !== undefined) user.level = level;
+    if (examTarget !== undefined) user.examTarget = examTarget;
+    if (avatar !== undefined) user.avatar = avatar;
+    if (aiSettings !== undefined) user.aiSettings = aiSettings;
+    if (notificationSettings !== undefined) user.notificationSettings = notificationSettings;
+    if (examPreferences !== undefined) user.examPreferences = examPreferences;
+    if (gamificationSettings !== undefined) user.gamificationSettings = gamificationSettings;
+    if (privacySettings !== undefined) user.privacySettings = privacySettings;
+    if (appearance !== undefined) user.appearance = appearance;
+
+    db.users[userIndex] = user;
+    saveDb(db);
+
+    // Sync baseline to Supabase user_profiles if configured
+    if (supabase) {
+      try {
+        await supabase
+          .from('user_profiles')
+          .upsert({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            level: user.level || 1,
+            points: user.points || 0,
+            school_id: user.school || user.school_id || null,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+      } catch (err) {
+        console.error('⚠️ Supabase sync failed during profile update:', err);
+      }
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        points: user.points || 0,
+        level: user.level || 1,
+        school: user.school || '',
+        avatar: user.avatar || '',
+        examTarget: user.examTarget || 'JAMB',
+        aiSettings: user.aiSettings || null,
+        notificationSettings: user.notificationSettings || null,
+        examPreferences: user.examPreferences || null,
+        gamificationSettings: user.gamificationSettings || null,
+        privacySettings: user.privacySettings || null,
+        appearance: user.appearance || null
+      }
+    });
+  });
 
 
 
