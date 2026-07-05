@@ -44,9 +44,8 @@ const LLM_TEMPERATURE     = 0.4;
 // ✅ Model constants — change here only, reflected everywhere
 const EMBED_MODEL       = 'text-embedding-3-small'; // 1536 dims — must match pgvector column
 const OPENAI_CHAT_MODEL = 'gpt-4o-mini';
-// ✅ gemini-2.0-flash is stable in current @google/genai SDK
-//    gemini-2.5-flash requires preview API and may not be available
-const GEMINI_CHAT_MODEL = 'gemini-2.0-flash';
+// ✅ gemini-3.5-flash is the modern, highly intelligent recommended model in current @google/genai SDK
+const GEMINI_CHAT_MODEL = 'gemini-3.5-flash';
 
 // Similarity threshold — lowered from 0.65 to catch more relevant docs
 // on short/vague questions. Still filters pure noise below 0.50.
@@ -121,7 +120,14 @@ function getGemini(): GoogleGenAI | null {
   const key = optionalEnv('GEMINI_API_KEY');
   if (!key) return null;
   if (!_gemini) {
-    _gemini = new GoogleGenAI({ apiKey: key });
+    _gemini = new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build'
+        }
+      }
+    });
   }
   return _gemini;
 }
@@ -197,26 +203,46 @@ function maskSessionId(sessionId: string): string {
 export async function embedQuery(
   text: string
 ): Promise<{ embedding: number[]; provider: AIProvider }> {
-  if (!optionalEnv('OPENAI_API_KEY')) {
-    console.warn('⚠️ OPENAI_API_KEY not set — skipping embedding, no RAG retrieval.');
-    return { embedding: [], provider: 'none' };
+  if (optionalEnv('OPENAI_API_KEY')) {
+    try {
+      const openai = getOpenAI();
+      const res    = await openai.embeddings.create({
+        model: EMBED_MODEL,
+        input: text.slice(0, 8_000),
+      });
+
+      const { embedding } = res.data[0];
+      console.log(`✅ Embedded (${embedding.length} dims) via OpenAI`);
+      return { embedding, provider: 'openai' };
+
+    } catch (err: any) {
+      console.error('❌ OpenAI embedding failed, falling back to Gemini:', err.message);
+    }
   }
 
-  try {
-    const openai = getOpenAI();
-    const res    = await openai.embeddings.create({
-      model: EMBED_MODEL,
-      input: text.slice(0, 8_000),
-    });
-
-    const { embedding } = res.data[0];
-    console.log(`✅ Embedded (${embedding.length} dims) via OpenAI`);
-    return { embedding, provider: 'openai' };
-
-  } catch (err: any) {
-    console.error('❌ OpenAI embedding failed:', err.message);
-    return { embedding: [], provider: 'none' };
+  const gemini = getGemini();
+  if (gemini) {
+    try {
+      console.log('Embedding via Gemini (gemini-embedding-2-preview, 768 dims)...');
+      const response = await gemini.models.embedContent({
+        model: 'gemini-embedding-2-preview',
+        contents: text.slice(0, 8_000),
+        config: {
+          outputDimensionality: 768
+        }
+      });
+      const embedding = response.embeddings?.[0]?.values ?? (response as any).embedding?.values;
+      if (embedding && embedding.length > 0) {
+        console.log(`✅ Embedded (${embedding.length} dims) via Gemini`);
+        return { embedding, provider: 'gemini' };
+      }
+    } catch (err: any) {
+      console.error('❌ Gemini embedding failed:', err.message);
+    }
   }
+
+  console.warn('⚠️ No embedding provider succeeded — skipping vector retrieval.');
+  return { embedding: [], provider: 'none' };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,7 +267,38 @@ export async function retrieveDocuments(
     return [];
   }
 
+  // 1. Try match_document_chunks first (standard schema in supabase_schema.sql)
   try {
+    console.log('🔍 Querying match_document_chunks RPC...');
+    const { data, error } = await supabase.rpc('match_document_chunks', {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count:     matchCount,
+      filter_subject:  subject ?? null,
+    });
+
+    if (!error && data) {
+      const docs = ((data as any[]) ?? []).map(doc => ({
+        id: doc.id,
+        title: doc.topic || doc.title || 'Concept',
+        content: doc.content || '',
+        source: doc.source || 'Textbook',
+        subject: doc.subject || '',
+        similarity: doc.similarity || 0
+      }));
+      console.log(`✅ Retrieved ${docs.length} doc(s) via match_document_chunks`);
+      return docs;
+    }
+    if (error) {
+      console.warn('⚠️ match_document_chunks RPC returned error, trying match_documents:', error.message);
+    }
+  } catch (err: any) {
+    console.warn('⚠️ match_document_chunks exception, trying match_documents:', err.message);
+  }
+
+  // 2. Fallback to match_documents (alternate schema)
+  try {
+    console.log('🔍 Querying match_documents RPC...');
     const { data, error } = await supabase.rpc('match_documents', {
       query_embedding: queryEmbedding,
       match_threshold: threshold,
@@ -254,13 +311,15 @@ export async function retrieveDocuments(
       return [];
     }
 
-    const docs = (data as RetrievedDoc[]) ?? [];
-    console.log(
-      `✅ Retrieved ${docs.length} doc(s)` +
-      (subject ? ` [subject: ${subject}]` : '') +
-      ` [threshold: ${threshold}]`
-    );
-
+    const docs = ((data as any[]) ?? []).map(doc => ({
+      id: doc.id,
+      title: doc.title || doc.topic || 'Concept',
+      content: doc.content || '',
+      source: doc.source || 'Textbook',
+      subject: doc.subject || '',
+      similarity: doc.similarity || 0
+    }));
+    console.log(`✅ Retrieved ${docs.length} doc(s) via match_documents`);
     return docs;
 
   } catch (err: any) {
@@ -434,7 +493,6 @@ export async function generateRAGResponse(
         config: {
           systemInstruction: systemPrompt,
           temperature:       LLM_TEMPERATURE,
-          maxOutputTokens:   LLM_MAX_TOKENS,
         },
       });
 
