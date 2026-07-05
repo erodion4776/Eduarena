@@ -2,6 +2,8 @@
 import OpenAI from 'openai';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
+import { Groq } from 'groq-sdk';
+import { HfInference } from '@huggingface/inference';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -28,7 +30,7 @@ export interface ChatMessage {
   text:   string;
 }
 
-export type AIProvider = 'openai' | 'gemini' | 'none';
+export type AIProvider = 'openai' | 'gemini' | 'groq' | 'huggingface' | 'none';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -89,6 +91,8 @@ function tryGetSupabase(): SupabaseClient | null {
 let _openai:   OpenAI         | null = null;
 let _supabase: SupabaseClient | null = null;
 let _gemini:   GoogleGenAI    | null = null;
+let _groq:     Groq           | null = null;
+let _hf:       HfInference    | null = null;
 
 function getOpenAI(): OpenAI {
   if (!_openai) {
@@ -130,6 +134,32 @@ function getGemini(): GoogleGenAI | null {
     });
   }
   return _gemini;
+}
+
+function getGroq(): Groq | null {
+  const key = optionalEnv('GROQ_API_KEY') || optionalEnv('VITE_GROQ_API_KEY') || optionalEnv('GROK_API_KEY') || optionalEnv('VITE_GROK_API_KEY');
+  if (!key) return null;
+  if (!_groq) {
+    _groq = new Groq({ apiKey: key });
+  }
+  return _groq;
+}
+
+function getHF(): HfInference | null {
+  const key = optionalEnv('HF_API_KEY') || optionalEnv('VITE_HF_API_KEY');
+  if (!key) return null;
+  if (!_hf) {
+    _hf = new HfInference(key);
+  }
+  return _hf;
+}
+
+function extractHFAnswer(generatedText: string): string {
+  const marker     = '<|assistant|>';
+  const markerIdx  = generatedText.lastIndexOf(marker);
+  return markerIdx !== -1
+    ? generatedText.slice(markerIdx + marker.length).trim()
+    : generatedText.trim();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -436,7 +466,7 @@ function buildGeminiHistory(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Step 6 — Generate AI response (OpenAI primary → Gemini fallback)
+// Step 6 — Generate AI response (Gemini primary → Fallbacks)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function generateRAGResponse(
   question: string,
@@ -445,10 +475,107 @@ export async function generateRAGResponse(
   subject?: string
 ): Promise<{ response: string; provider: AIProvider }> {
   const systemPrompt = buildSystemPrompt(context, subject);
+  let lastError: Error | null = null;
 
-  // ── OpenAI primary ──────────────────────────────────────────────────────
+  // ── Gemini primary ──────────────────────────────────────────────────────
+  const gemini = getGemini();
+  if (gemini) {
+    try {
+      console.log(`🤖 Attempting response via Gemini (${GEMINI_CHAT_MODEL})...`);
+      // ✅ buildGeminiHistory now takes the question and appends it internally
+      const contents = buildGeminiHistory(history, question);
+
+      const res = await gemini.models.generateContent({
+        model:    GEMINI_CHAT_MODEL,
+        contents,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature:       LLM_TEMPERATURE,
+        },
+      });
+
+      const text = res.text?.trim();
+      if (!text) throw new Error('Gemini returned empty content.');
+
+      console.log(`✅ Response via Gemini ${GEMINI_CHAT_MODEL}`);
+      return { response: text, provider: 'gemini' };
+
+    } catch (err: any) {
+      console.warn('⚠️ Gemini failed, falling back to Groq:', err.message);
+      lastError = err;
+    }
+  }
+
+  // ── Groq fallback ────────────────────────────────────────────────────────
+  const groqClient = getGroq();
+  if (groqClient) {
+    try {
+      console.log(`🤖 Attempting fallback response via Groq...`);
+      const historyMessages = history.slice(-MAX_HISTORY_TURNS).map(msg => ({
+        role:    msg.sender === 'student' ? 'user' as const : 'assistant' as const,
+        content: msg.text,
+      }));
+
+      const completion = await groqClient.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        temperature: LLM_TEMPERATURE,
+        max_completion_tokens: LLM_MAX_TOKENS,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...historyMessages,
+          { role: 'user',   content: question },
+        ],
+      });
+
+      const text = completion.choices[0]?.message?.content?.trim();
+      if (!text) throw new Error('Groq returned empty content.');
+
+      console.log(`✅ Response via Groq llama-3.3-70b-versatile (fallback)`);
+      return { response: text, provider: 'groq' };
+
+    } catch (err: any) {
+      console.warn('⚠️ Groq fallback failed, falling back to Hugging Face:', err.message);
+      lastError = err;
+    }
+  }
+
+  // ── Hugging Face fallback ───────────────────────────────────────────────
+  const hfClient = getHF();
+  if (hfClient) {
+    try {
+      console.log(`🤖 Attempting fallback response via Hugging Face...`);
+      const historyStr = history
+        .slice(-MAX_HISTORY_TURNS)
+        .map(msg => {
+          const role = msg.sender === 'student' ? 'user' : 'assistant';
+          return `<|${role}|>\n${msg.text}`;
+        })
+        .join('\n');
+
+      const inputs = `<|system|>\n${systemPrompt}\n${historyStr}\n<|user|>\n${question}\n<|assistant|>`;
+
+      const response = await hfClient.textGeneration({
+        model:      'meta-llama/Llama-3.2-3B-Instruct',
+        inputs,
+        parameters: { max_new_tokens: LLM_MAX_TOKENS },
+      });
+
+      const text = extractHFAnswer(response.generated_text ?? '').trim();
+      if (!text) throw new Error('Hugging Face returned empty content.');
+
+      console.log(`✅ Response via Hugging Face Llama-3.2-3B-Instruct (fallback)`);
+      return { response: text, provider: 'huggingface' };
+
+    } catch (err: any) {
+      console.warn('⚠️ Hugging Face fallback failed, falling back to OpenAI:', err.message);
+      lastError = err;
+    }
+  }
+
+  // ── OpenAI fallback ─────────────────────────────────────────────────────
   if (optionalEnv('OPENAI_API_KEY')) {
     try {
+      console.log(`🤖 Attempting fallback response via OpenAI (${OPENAI_CHAT_MODEL})...`);
       const openai = getOpenAI();
 
       const historyMessages: OpenAI.Chat.ChatCompletionMessageParam[] =
@@ -471,46 +598,21 @@ export async function generateRAGResponse(
       const text = completion.choices[0]?.message?.content?.trim();
       if (!text) throw new Error('OpenAI returned empty content.');
 
-      console.log(`✅ Response via OpenAI ${OPENAI_CHAT_MODEL}`);
+      console.log(`✅ Response via OpenAI ${OPENAI_CHAT_MODEL} (fallback)`);
       return { response: text, provider: 'openai' };
 
     } catch (err: any) {
-      console.warn('⚠️ OpenAI failed, falling through to Gemini:', err.message);
-      // Intentional fall-through — do NOT rethrow
+      console.error('❌ OpenAI fallback failed:', err.message);
+      lastError = err;
     }
   }
 
-  // ── Gemini fallback ─────────────────────────────────────────────────────
-  const gemini = getGemini();
-  if (gemini) {
-    try {
-      // ✅ buildGeminiHistory now takes the question and appends it internally
-      const contents = buildGeminiHistory(history, question);
-
-      const res = await gemini.models.generateContent({
-        model:    GEMINI_CHAT_MODEL,
-        contents,
-        config: {
-          systemInstruction: systemPrompt,
-          temperature:       LLM_TEMPERATURE,
-        },
-      });
-
-      const text = res.text?.trim();
-      if (!text) throw new Error('Gemini returned empty content.');
-
-      console.log(`✅ Response via Gemini ${GEMINI_CHAT_MODEL} (fallback)`);
-      return { response: text, provider: 'gemini' };
-
-    } catch (err: any) {
-      console.error('❌ Gemini fallback failed:', err.message);
-      throw new Error(`All AI providers failed. Last error: ${err.message}`);
-    }
+  // ── No providers succeeded ──────────────────────────────────────────────
+  if (lastError) {
+    throw new Error(`All AI providers failed. Last error: ${lastError.message}`);
   }
-
-  // ── No providers available ──────────────────────────────────────────────
   throw new Error(
-    'No AI provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY.'
+    'No AI provider configured. Set GEMINI_API_KEY, GROQ_API_KEY, HF_API_KEY, or OPENAI_API_KEY.'
   );
 }
 
