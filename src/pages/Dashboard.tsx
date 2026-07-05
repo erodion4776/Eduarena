@@ -196,6 +196,7 @@ export default function Dashboard() {
   const firstName = useMemo(() => {
     if (!user) return null;
     const raw =
+      user.name ??
       (user as any).user_metadata?.full_name ??
       (user as any).user_metadata?.name ??
       (user as any).email?.split('@')[0] ??

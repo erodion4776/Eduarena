@@ -42,13 +42,11 @@ export default function Navbar({ toggleSidebar }: { toggleSidebar: () => void })
                   </div>
                 </div>
               </div>
-              {(user.role === 'teacher' || user.role === 'admin') && (
-                <Link to="/teacher">
-                  <Button variant="ghost" size="icon">
-                    <GraduationCap className={`w-5 h-5 ${mode === 'arena' ? 'text-cyan-500' : 'text-slate-600'}`} />
-                  </Button>
-                </Link>
-              )}
+              <Link to="/teacher">
+                <Button variant="ghost" size="icon">
+                  <GraduationCap className={`w-5 h-5 ${mode === 'arena' ? 'text-cyan-500' : 'text-slate-600'}`} />
+                </Button>
+              </Link>
               <Button variant="ghost" size="icon" onClick={() => logout()}>
                 <LogOut className={`w-5 h-5 ${mode === 'arena' ? 'text-green-500' : 'text-slate-600'}`} />
               </Button>

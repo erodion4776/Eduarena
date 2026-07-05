@@ -1,428 +1,465 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
 import { useAuthStore } from '@/src/store/useAuthStore';
+import { useThemeStore } from '@/src/store/useThemeStore';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { motion, AnimatePresence } from 'motion/react';
-import { BookOpen, GraduationCap, User, Eye, EyeOff, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { 
+  User, 
+  Lock, 
+  Mail, 
+  Eye, 
+  EyeOff, 
+  Database, 
+  Terminal, 
+  KeyRound, 
+  ShieldCheck, 
+  GraduationCap, 
+  Compass, 
+  Sparkles,
+  Zap
+} from 'lucide-react';
 import { toast } from 'sonner';
 
-type Mode = 'signin' | 'signup';
-type TenantMode = 'create' | 'join';
-
-interface LocationState {
-  from?: { pathname: string };
-}
-
 export default function Login() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { user, isInitialized, signIn, signUp, isLoading } = useAuthStore();
-
-  const [mode, setMode] = useState<Mode>('signin');
-  const [tenantMode, setTenantMode] = useState<TenantMode>('join');
-  const [role, setRole] = useState<'student' | 'teacher'>('student');
-  const [showPassword, setShowPassword] = useState(false);
-
-  // Form states
-  const [name, setName] = useState('');
+  const { setUser, loginAsGuest } = useAuthStore();
+  const { mode } = useThemeStore();
+  
+  // Auth Form State
+  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [schoolName, setSchoolName] = useState('');
-  const [joinSlug, setJoinSlug] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<'student' | 'admin'>('student');
+  const [schoolId, setSchoolId] = useState('school_1');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Local errors
-  const [error, setError] = useState<string | null>(null);
+  // Schema Panel Tab State
+  const [activeSchemaTab, setActiveSchemaTab] = useState<'users' | 'sessions' | 'rules'>('users');
+  const [showSchemaConsole, setShowSchemaConsole] = useState(false);
 
-  // Rate limiting / submission cooldown
-  const [lastAttempt, setLastAttempt] = useState<number>(0);
-  const COOLDOWN_MS = 2000;
-
-  // Handles reactive navigation upon successful authentication
-  useEffect(() => {
-    if (isInitialized && user) {
-      const getDefaultPath = (userRole: 'student' | 'teacher' | 'admin'): string => {
-        switch (userRole) {
-          case 'admin':
-            return '/admin';
-          case 'teacher':
-            return '/teacher';
-          default:
-            return '/';
-        }
-      };
-
-      const fallback = getDefaultPath(user.role);
-      const locationState = location.state as LocationState | null;
-      const destination = locationState?.from?.pathname || fallback;
-      navigate(destination, { replace: true });
-    }
-  }, [user, isInitialized, navigate, location.state]);
-
-  // Form field state reset when switching between SignIn & SignUp modes
-  const switchMode = (next: Mode) => {
-    setMode(next);
-    setError(null);
-    if (next === 'signin') {
-      setName('');
-      setSchoolName('');
-      setJoinSlug('');
-      setRole('student');
-      setTenantMode('join');
-    }
-  };
-
-  // Redirecting state or null while useEffect handles routing
-  if (isInitialized && user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">
-        <div className="flex flex-col items-center gap-2">
-          <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
-          <p className="text-zinc-400 text-sm">Redirecting...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Core Auth Submission Handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
-    // Client-side submission cooldown to prevent spamming auth requests
-    const now = Date.now();
-    if (now - lastAttempt < COOLDOWN_MS) {
-      toast.warning('Please wait a moment before trying again.');
+    if (!email || !password || (isSignUp && !name)) {
+      toast.error('Please fill in all required fields.');
       return;
     }
-    setLastAttempt(now);
 
-    if (!email || !password) {
-      setError('Please fill in all required fields.');
-      return;
-    }
+    setIsSubmitting(true);
+    const endpoint = isSignUp ? '/api/auth/signup' : '/api/auth/login';
+    const payload = isSignUp 
+      ? { name, email, password, role, school_id: schoolId }
+      : { email, password };
 
     try {
-      if (mode === 'signup') {
-        if (!name.trim()) {
-          setError('Please provide your name.');
-          return;
-        }
-        if (tenantMode === 'create' && !schoolName.trim()) {
-          setError('Please provide a school name to register.');
-          return;
-        }
-        if (tenantMode === 'join' && !joinSlug.trim()) {
-          setError('Please enter your school join code.');
-          return;
-        }
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-        const res = await signUp({
-          email,
-          password,
-          name,
-          role,
-          tenantMode,
-          schoolName: tenantMode === 'create' ? schoolName : undefined,
-          joinSlug: tenantMode === 'join' ? joinSlug : undefined,
-        });
+      const data = await response.json();
 
-        if (res.error) {
-          setError(res.error);
-          return;
-        }
-        toast.success('Registration successful!');
-      } else {
-        const res = await signIn(email, password);
-        if (res.error) {
-          setError(res.error);
-          return;
-        }
-        toast.success('Signed in successfully!');
+      if (!response.ok) {
+        throw new Error(data.error || 'Authentication failed');
       }
+
+      toast.success(isSignUp ? 'Account created successfully!' : 'Welcome back to Edu Arena!');
+      setUser(data.user);
     } catch (err: any) {
-      setError(err.message || 'An error occurred during authentication.');
+      toast.error(err.message || 'An error occurred. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
+  const handleGuestEntry = () => {
+    loginAsGuest();
+    toast.success('Browsing as Guest Scholar. Points and levels are temporary.');
+  };
+
+  // SQL Schema Definitions for Authentication and Login
+  const sqlSchemaUsers = `-- 1. Custom Relational Schema for User Identity and Credentials
+CREATE TABLE IF NOT EXISTS users_auth (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL, -- Securely hashed via bcrypt (Work factor 10)
+  role VARCHAR(50) DEFAULT 'student' CHECK (role IN ('student', 'admin', 'teacher')),
+  school_id VARCHAR(100),
+  level INTEGER DEFAULT 1,
+  points INTEGER DEFAULT 0,
+  rank VARCHAR(100) DEFAULT 'Bronze Scholar',
+  badges JSONB DEFAULT '[]', -- JSON array of earned achievements
+  wins INTEGER DEFAULT 0,
+  losses INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for fast user retrieval during credentials validation
+CREATE INDEX IF NOT EXISTS idx_users_auth_email ON users_auth(email);`;
+
+  const sqlSchemaSessions = `-- 2. Relational Schema for Active Session Management (JWT / Refresh Tokens)
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users_auth(id) ON DELETE CASCADE,
+  token_hash VARCHAR(255) UNIQUE NOT NULL, -- Securely hashed refresh token / session token
+  user_agent TEXT,
+  ip_address VARCHAR(45),
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  is_revoked BOOLEAN DEFAULT FALSE
+);
+
+-- Indexes for lightning fast session lookups & security audits
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON user_sessions(token_hash);`;
+
+  const sqlSchemaRules = `-- 3. Row-Level Security Rules for Data Isolation
+ALTER TABLE users_auth ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can inspect and update only their own profile
+CREATE POLICY "Users can manage own profiles" ON users_auth
+  FOR ALL
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+-- Policy: Administrators have unrestricted read access to study records
+CREATE POLICY "Admins read all profiles" ON users_auth
+  FOR SELECT
+  USING (role = 'admin');`;
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-4 font-sans relative overflow-hidden">
-      {/* Background decorations */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl -z-10 animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl -z-10 animate-pulse delay-1000" />
+    <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col lg:flex-row relative overflow-hidden select-none">
+      {/* Decorative ambient background rings */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-md z-10"
-      >
-        <Card className="border-white/10 bg-zinc-900/80 backdrop-blur-md text-white shadow-2xl relative">
-          <CardHeader className="text-center pb-4">
-            <div className="mx-auto w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center mb-4 shadow-lg shadow-cyan-500/20">
-              <BookOpen className="w-6 h-6 text-white" />
+      {/* LEFT PANEL: Branding & Philosophy */}
+      <div className="flex-1 flex flex-col justify-between p-8 lg:p-16 z-10 border-b lg:border-b-0 lg:border-r border-white/10">
+        <header className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+            <Zap className="w-5 h-5 text-black font-bold animate-pulse" />
+          </div>
+          <span className="text-xl font-display font-black tracking-[0.2em] uppercase">
+            EDU <span className="text-cyan-400">ARENA</span>
+          </span>
+        </header>
+
+        <main className="my-auto py-12 space-y-6 max-w-lg">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/40 border border-cyan-500/30 text-cyan-400 text-xs font-black uppercase tracking-[0.15em]">
+            <Sparkles className="w-3.5 h-3.5 animate-bounce" />
+            Empowering WAEC, JAMB & NECO Scholars
+          </div>
+          <h1 className="text-4xl lg:text-5xl font-heading font-black tracking-tighter leading-[1.1] text-white">
+            The Digital Sandbox for <span className="bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">Exam Excellence</span>.
+          </h1>
+          <p className="text-zinc-400 text-base leading-relaxed">
+            Practice dynamically generated questions, interact with Tutor Chuks (your RAG-driven AI professor), battle other students in real-time arenas, and earn legendary badges.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4 pt-4">
+            <div className="p-4 rounded-2xl bg-zinc-900/50 border border-white/5 flex items-center gap-3">
+              <GraduationCap className="w-8 h-8 text-cyan-400 shrink-0" />
+              <div>
+                <h4 className="text-sm font-black text-white uppercase">Syllabus Focused</h4>
+                <p className="text-xs text-zinc-500">Official curricula aligned</p>
+              </div>
             </div>
-            <CardTitle className="text-3xl font-display font-black tracking-tight uppercase">
-              Edu<span className="text-cyan-400">Arena</span>
-            </CardTitle>
-            <CardDescription className="text-zinc-400 mt-1">
-              {mode === 'signup' ? 'Create your learning node link' : 'Synchronize with the learning network'}
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent>
-            {/* Mode selection tabs */}
-            <div
-              role="tablist"
-              aria-label="Authentication mode"
-              className="flex mb-6 rounded-xl bg-zinc-800/60 p-1 border border-white/5"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === 'signin'}
-                aria-controls="auth-form-panel"
-                onClick={() => switchMode('signin')}
-                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${
-                  mode === 'signin'
-                    ? 'bg-cyan-500 text-black font-bold shadow-lg shadow-cyan-500/10'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === 'signup'}
-                aria-controls="auth-form-panel"
-                onClick={() => switchMode('signup')}
-                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${
-                  mode === 'signup'
-                    ? 'bg-cyan-500 text-black font-bold shadow-lg shadow-cyan-500/10'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Sign Up
-              </button>
+            <div className="p-4 rounded-2xl bg-zinc-900/50 border border-white/5 flex items-center gap-3">
+              <Compass className="w-8 h-8 text-purple-400 shrink-0" />
+              <div>
+                <h4 className="text-sm font-black text-white uppercase">AI Diagnostics</h4>
+                <p className="text-xs text-zinc-500">Personalized lesson planning</p>
+              </div>
             </div>
+          </div>
+        </main>
 
-            <form
-              id="auth-form-panel"
-              role="tabpanel"
-              aria-label={`${mode === 'signin' ? 'Sign In' : 'Sign Up'} Form`}
-              onSubmit={handleSubmit}
-              className="space-y-4"
+        <footer className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-white/5">
+          <p className="text-xs text-zinc-500">© 2026 Edu Arena. Engineered in Sandbox Environment.</p>
+          <button 
+            onClick={() => setShowSchemaConsole(!showSchemaConsole)}
+            className="inline-flex items-center gap-2 text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-all uppercase tracking-wider self-start sm:self-auto"
+          >
+            <Database className="w-3.5 h-3.5 animate-pulse" />
+            {showSchemaConsole ? 'Hide SQL Database Schema' : 'Inspect SQL Database Schema'}
+          </button>
+        </footer>
+      </div>
+
+      {/* RIGHT PANEL: Dynamic Forms or Database Schema Console */}
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-8 lg:p-16 z-10 bg-zinc-950/80">
+        <AnimatePresence mode="wait">
+          {!showSchemaConsole ? (
+            <motion.div
+              key="auth-card"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="w-full max-w-md"
             >
-              <AnimatePresence mode="wait">
-                {mode === 'signup' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="space-y-4 overflow-hidden"
-                  >
-                    <div className="space-y-2">
-                      <Label htmlFor="name" className="text-zinc-300">Full Name</Label>
-                      <Input
-                        id="name"
-                        placeholder="John Doe"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500"
-                      />
+              <Card className="bg-zinc-900/80 border-white/10 backdrop-blur-md rounded-3xl overflow-hidden shadow-2xl">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-2xl font-heading font-black tracking-tight text-white uppercase">
+                    {isSignUp ? 'Create your Account' : 'Welcome Scholar'}
+                  </CardTitle>
+                  <CardDescription className="text-zinc-400">
+                    {isSignUp 
+                      ? 'Register your profile to begin saving exam progress and earning points.' 
+                      : 'Enter your credentials to access your personal study terminal.'}
+                  </CardDescription>
+                </CardHeader>
+                
+                <CardContent className="space-y-4">
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    {isSignUp && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="space-y-1.5"
+                      >
+                        <Label htmlFor="name" className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Full Name</Label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                          <Input 
+                            id="name"
+                            type="text" 
+                            placeholder="Chinedu Okafor"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            className="bg-zinc-950/50 border-white/10 pl-9 rounded-xl focus-visible:ring-cyan-500/50 text-white placeholder:text-zinc-600 text-sm py-5"
+                            required={isSignUp}
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="email" className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Email Address</Label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                        <Input 
+                          id="email"
+                          type="email" 
+                          placeholder="scholar@eduarena.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="bg-zinc-950/50 border-white/10 pl-9 rounded-xl focus-visible:ring-cyan-500/50 text-white placeholder:text-zinc-600 text-sm py-5"
+                          required
+                        />
+                      </div>
                     </div>
 
-                    {/* School options mode */}
-                    <div className="space-y-2">
-                      <Label className="text-zinc-300">School Preference</Label>
-                      <div className="flex rounded-lg bg-zinc-800/60 p-1 border border-white/5">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="password" className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Password</Label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                        <Input 
+                          id="password"
+                          type={showPassword ? 'text' : 'password'} 
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="bg-zinc-950/50 border-white/10 pl-9 pr-10 rounded-xl focus-visible:ring-cyan-500/50 text-white placeholder:text-zinc-600 text-sm py-5"
+                          required
+                        />
                         <button
                           type="button"
-                          onClick={() => setTenantMode('join')}
-                          className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${
-                            tenantMode === 'join'
-                              ? 'bg-zinc-700 text-white border border-white/10'
-                              : 'text-zinc-400 hover:text-zinc-200'
-                          }`}
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-3 h-4 w-4 text-zinc-500 hover:text-white transition-colors"
                         >
-                          Join a school
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setTenantMode('create')}
-                          className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${
-                            tenantMode === 'create'
-                              ? 'bg-zinc-700 text-white border border-white/10'
-                              : 'text-zinc-400 hover:text-zinc-200'
-                          }`}
-                        >
-                          Register a school
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
                     </div>
 
-                    {tenantMode === 'join' ? (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-4"
+                    {isSignUp && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="grid grid-cols-2 gap-3"
                       >
-                        <div className="space-y-2">
-                          <Label htmlFor="joinSlug" className="text-zinc-300 flex items-center gap-1.5">
-                            School Join Code <Sparkles className="w-3.5 h-3.5 text-yellow-400 animate-pulse" />
-                          </Label>
-                          <Input
-                            id="joinSlug"
-                            placeholder="e.g. greenfield-high-a1b2"
-                            value={joinSlug}
-                            onChange={(e) => setJoinSlug(e.target.value)}
-                            className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500 font-mono tracking-wider"
-                          />
-                          <p className="text-xs text-zinc-400">Ask your school administrator for the join code.</p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="role" className="text-zinc-300">I am a</Label>
-                          <Select
+                        <div className="space-y-1.5">
+                          <Label htmlFor="role" className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Account Role</Label>
+                          <select
+                            id="role"
                             value={role}
-                            onValueChange={(val: 'student' | 'teacher') => setRole(val)}
+                            onChange={(e) => setRole(e.target.value as any)}
+                            className="w-full bg-zinc-950/50 border border-white/10 rounded-xl px-3 py-2.5 focus:ring-1 focus:ring-cyan-500/50 text-white text-sm"
                           >
-                            <SelectTrigger id="role" className="bg-zinc-800/50 border-white/10 text-white focus:ring-cyan-500">
-                              <SelectValue placeholder="Select your role" />
-                            </SelectTrigger>
-                            <SelectContent className="bg-zinc-900 border-white/10 text-white">
-                              <SelectItem value="student" className="hover:bg-zinc-800">
-                                <span className="flex items-center gap-2">
-                                  <User className="w-4 h-4 text-cyan-400" /> Student
-                                </span>
-                              </SelectItem>
-                              <SelectItem value="teacher" className="hover:bg-zinc-800">
-                                <span className="flex items-center gap-2">
-                                  <GraduationCap className="w-4 h-4 text-yellow-400" /> Teacher
-                                </span>
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
+                            <option value="student" className="bg-zinc-950">Student</option>
+                            <option value="admin" className="bg-zinc-950">Administrator</option>
+                          </select>
                         </div>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-2"
-                      >
-                        <Label htmlFor="schoolName" className="text-zinc-300 flex items-center gap-1.5">
-                          School Name <Badge variant="secondary" className="bg-cyan-500/10 text-cyan-400 text-[10px] border-none">NEW SCHOOL</Badge>
-                        </Label>
-                        <Input
-                          id="schoolName"
-                          placeholder="Greenfield High Academy"
-                          value={schoolName}
-                          onChange={(e) => setSchoolName(e.target.value)}
-                          className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500"
-                        />
-                        <p className="text-xs text-zinc-400">You will automatically be registered as the administrator of this school.</p>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="school" className="text-zinc-400 text-xs font-bold uppercase tracking-wider">School Code</Label>
+                          <Input 
+                            id="school"
+                            type="text" 
+                            placeholder="Lagos Academy"
+                            value={schoolId}
+                            onChange={(e) => setSchoolId(e.target.value)}
+                            className="bg-zinc-950/50 border-white/10 rounded-xl focus-visible:ring-cyan-500/50 text-white placeholder:text-zinc-600 text-sm py-2.5"
+                          />
+                        </div>
                       </motion.div>
                     )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-zinc-300">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="scholar@domain.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500"
-                />
-              </div>
+                    <Button 
+                      type="submit" 
+                      disabled={isSubmitting}
+                      className="w-full bg-gradient-to-tr from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-black uppercase text-xs tracking-widest rounded-xl py-5 shadow-lg shadow-cyan-500/15 disabled:opacity-50 mt-2 cursor-pointer transition-all duration-300 hover:scale-[1.02]"
+                    >
+                      {isSubmitting 
+                        ? 'Validating Identity...' 
+                        : isSignUp ? 'Initiate Account' : 'Authenticate Credentials'}
+                    </Button>
+                  </form>
+                </CardContent>
 
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-zinc-300">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="••••••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="bg-zinc-800/50 border-white/10 text-white focus:border-cyan-500 pr-10"
-                    minLength={6}
-                  />
-                  <button
+                <CardFooter className="flex flex-col gap-4 border-t border-white/5 pt-4 pb-6 bg-zinc-900/30">
+                  <div className="text-center w-full">
+                    <button
+                      onClick={() => setIsSignUp(!isSignUp)}
+                      className="text-xs text-zinc-400 hover:text-cyan-400 font-bold tracking-wide uppercase transition-colors"
+                    >
+                      {isSignUp 
+                        ? 'Already registered? Access study terminal' 
+                        : 'New Scholar? Register your account here'}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-3 w-full">
+                    <div className="h-px bg-white/5 flex-1" />
+                    <span className="text-[10px] text-zinc-600 font-black tracking-widest uppercase">OR</span>
+                    <div className="h-px bg-white/5 flex-1" />
+                  </div>
+
+                  <Button 
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    aria-pressed={showPassword}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors"
+                    onClick={handleGuestEntry}
+                    variant="outline"
+                    className="w-full border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white font-bold rounded-xl py-5 text-xs tracking-wider uppercase cursor-pointer"
                   >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    🚀 Skip and Browse as Guest Scholar
+                  </Button>
+                </CardFooter>
+              </Card>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="schema-card"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="w-full max-w-2xl"
+            >
+              <Card className="bg-zinc-900 border-white/10 backdrop-blur-md rounded-3xl overflow-hidden shadow-2xl relative">
+                {/* Neon database glowing decoration */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(ellipse_at_center,_rgba(6,182,212,0.15)_0%,_transparent_75%)] pointer-events-none" />
+
+                <CardHeader className="border-b border-white/5 pb-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-5 h-5 text-cyan-400 animate-pulse" />
+                      <CardTitle className="text-lg font-display font-black tracking-widest text-white uppercase">
+                        SQL Schema console
+                      </CardTitle>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      onClick={() => setShowSchemaConsole(false)}
+                      className="text-xs uppercase tracking-wider text-zinc-500 hover:text-white"
+                    >
+                      Close Schema
+                    </Button>
+                  </div>
+                  <CardDescription className="text-xs text-zinc-400">
+                    Inspect the production-ready PostgreSQL relational schemas used for storing scholar identities, active JWT refresh tokens, and Row-Level Security.
+                  </CardDescription>
+                </CardHeader>
+
+                <div className="flex border-b border-white/5 bg-zinc-950/40">
+                  <button
+                    onClick={() => setActiveSchemaTab('users')}
+                    className={`flex-1 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                      activeSchemaTab === 'users' 
+                        ? 'border-cyan-500 text-cyan-400 bg-white/5' 
+                        : 'border-transparent text-zinc-500 hover:text-white'
+                    }`}
+                  >
+                    1. Users Identity
+                  </button>
+                  <button
+                    onClick={() => setActiveSchemaTab('sessions')}
+                    className={`flex-1 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                      activeSchemaTab === 'sessions' 
+                        ? 'border-cyan-500 text-cyan-400 bg-white/5' 
+                        : 'border-transparent text-zinc-500 hover:text-white'
+                    }`}
+                  >
+                    2. JWT Sessions
+                  </button>
+                  <button
+                    onClick={() => setActiveSchemaTab('rules')}
+                    className={`flex-1 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                      activeSchemaTab === 'rules' 
+                        ? 'border-cyan-500 text-cyan-400 bg-white/5' 
+                        : 'border-transparent text-zinc-500 hover:text-white'
+                    }`}
+                  >
+                    3. Security Rules
                   </button>
                 </div>
-                {showPassword && (
-                  <p className="text-xs text-yellow-400 flex items-center gap-1 mt-1 animate-fade-in">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                    Password is visible — ensure no one can see your screen.
-                  </p>
-                )}
-              </div>
 
-              {/* Error messages via accessible live-region */}
-              <div
-                role="alert"
-                aria-live="assertive"
-                aria-atomic="true"
-                className="min-h-0"
-              >
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-start gap-2"
+                <CardContent className="p-0">
+                  <div className="p-4 bg-zinc-950 font-mono text-xs text-zinc-300 h-80 overflow-y-auto no-scrollbar selection:bg-cyan-500/30">
+                    <pre className="whitespace-pre-wrap leading-relaxed text-[11px]">
+                      {activeSchemaTab === 'users' && sqlSchemaUsers}
+                      {activeSchemaTab === 'sessions' && sqlSchemaSessions}
+                      {activeSchemaTab === 'rules' && sqlSchemaRules}
+                    </pre>
+                  </div>
+                </CardContent>
+
+                <CardFooter className="bg-zinc-900/50 border-t border-white/5 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                      Prepared for PostgreSQL & Supabase Database
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const code = activeSchemaTab === 'users' 
+                        ? sqlSchemaUsers 
+                        : activeSchemaTab === 'sessions' 
+                          ? sqlSchemaSessions 
+                          : sqlSchemaRules;
+                      navigator.clipboard.writeText(code);
+                      toast.success('SQL Code snippet copied to clipboard!');
+                    }}
+                    className="bg-cyan-950/80 border border-cyan-500/30 hover:bg-cyan-900 text-cyan-400 text-xs font-bold uppercase tracking-wider rounded-lg shrink-0 cursor-pointer"
                   >
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
-                    <span>{error}</span>
-                  </motion.div>
-                )}
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full bg-cyan-500 hover:bg-cyan-600 text-black font-bold h-11 rounded-xl shadow-lg shadow-cyan-500/20 tracking-wider uppercase flex items-center justify-center gap-2 mt-2 transition-all"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Synchronizing...
-                  </>
-                ) : (
-                  mode === 'signup' ? 'Activate Account' : 'Initialize Connection'
-                )}
-              </Button>
-            </form>
-          </CardContent>
-
-          <CardFooter className="flex justify-center border-t border-white/5 pt-4">
-            <button
-              onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
-              className="text-sm text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
-            >
-              {mode === 'signup'
-                ? 'Already registered? Sync existing connection'
-                : 'Request new node activation (Sign Up)'}
-            </button>
-          </CardFooter>
-        </Card>
-      </motion.div>
+                    Copy SQL SQL Script
+                  </Button>
+                </CardFooter>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
