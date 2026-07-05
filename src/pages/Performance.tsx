@@ -58,6 +58,7 @@ export default function Performance() {
   const [masteryList, setMasteryList] = useState<TopicMasteryItem[]>([]);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [activeChartTab, setActiveChartTab] = useState<'bar' | 'radar'>('bar');
+  const [showDemo, setShowDemo] = useState<boolean>(false);
   
   // AI Insights State
   const [aiInsight, setAiInsight] = useState<string>('');
@@ -88,25 +89,60 @@ export default function Performance() {
       let masteryData: TopicMasteryItem[] = [];
 
       // 1. Fetch practice results (directly from proxy API to auto-fallback to local JSON if offline)
-      try {
-        const res = await fetch('/api/practice/session/results');
-        if (res.ok) {
-          const body = await res.json();
-          const items = body.results || [];
-          items.forEach((item: any) => {
-            combined.push({
-              id: item.id || `pr-${Math.random()}`,
-              source: 'practice',
-              subject: item.subject || 'Mixed',
-              score: Number(item.score ?? 0),
-              totalQuestions: Number(item.total_questions ?? 0),
-              xpEarned: Number(item.xp_earned ?? 0),
-              createdAt: item.created_at || new Date().toISOString()
+      let practiceResultsFetched = false;
+      if (supabase && user && user.id && user.id !== '1') {
+        try {
+          const { data: practiceData, error: practiceErr } = await supabase
+            .from('practice_results')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+
+          if (!practiceErr && practiceData) {
+            practiceData.forEach((item: any) => {
+              combined.push({
+                id: item.id,
+                source: 'practice',
+                subject: item.subject || 'Mixed',
+                score: Number(item.score ?? 0),
+                totalQuestions: Number(item.total_questions ?? 0),
+                xpEarned: Number(item.xp_earned ?? 0),
+                createdAt: item.created_at || new Date().toISOString()
+              });
             });
-          });
+            practiceResultsFetched = true;
+          }
+        } catch (sbPracticeErr) {
+          console.warn('Direct Supabase practice_results fetch failed:', sbPracticeErr);
         }
-      } catch (err) {
-        console.warn('Practice results API proxy fetch failed:', err);
+      }
+
+      if (!practiceResultsFetched) {
+        try {
+          const res = await fetch('/api/practice/session/results');
+          if (res.ok) {
+            const body = await res.json();
+            const items = body.results || [];
+            // If logged in, filter results by user_id to display the exact right data
+            const filteredItems = (user && user.id && user.id !== '1')
+              ? items.filter((item: any) => item.user_id === user.id)
+              : items;
+
+            filteredItems.forEach((item: any) => {
+              combined.push({
+                id: item.id || `pr-${Math.random()}`,
+                source: 'practice',
+                subject: item.subject || 'Mixed',
+                score: Number(item.score ?? 0),
+                totalQuestions: Number(item.total_questions ?? 0),
+                xpEarned: Number(item.xp_earned ?? 0),
+                createdAt: item.created_at || new Date().toISOString()
+              });
+            });
+          }
+        } catch (err) {
+          console.warn('Practice results API proxy fetch failed:', err);
+        }
       }
 
       // 2. Query direct Supabase if available for Exam Results and Mastery
@@ -114,7 +150,7 @@ export default function Performance() {
         try {
           // Fetch Exam Results (scoped to current user if authorized)
           let examQuery = supabase.from('exam_results').select('*');
-          if (user && user.id !== '1') {
+          if (user && user.id && user.id !== '1') {
             examQuery = examQuery.eq('user_id', user.id);
           }
           const { data: examData, error: examErr } = await examQuery.order('created_at', { ascending: false });
@@ -135,7 +171,7 @@ export default function Performance() {
 
           // Fetch Topic Mastery levels
           let masteryQuery = supabase.from('topic_mastery').select('*');
-          if (user && user.id !== '1') {
+          if (user && user.id && user.id !== '1') {
             masteryQuery = masteryQuery.eq('user_id', user.id);
           }
           const { data: dbMastery, error: masteryErr } = await masteryQuery;
@@ -170,12 +206,14 @@ export default function Performance() {
 
   // Combine fetched database records with realistic initial seed arrays if empty
   const activeResults = useMemo(() => {
-    return results.length > 0 ? results : defaultResults;
-  }, [results]);
+    if (results.length > 0) return results;
+    return showDemo ? defaultResults : [];
+  }, [results, showDemo]);
 
   const activeMastery = useMemo(() => {
-    return masteryList.length > 0 ? masteryList : defaultMastery;
-  }, [masteryList]);
+    if (masteryList.length > 0) return masteryList;
+    return showDemo ? defaultMastery : [];
+  }, [masteryList, showDemo]);
 
   // Dynamic Metrics Aggregators
   const stats = useMemo(() => {
@@ -308,6 +346,15 @@ export default function Performance() {
   useEffect(() => {
     if (activeResults.length > 0) {
       generateAICoachInsight();
+    } else {
+      setAiInsight(`👋 **Welcome to Edu Arena!**
+
+You do not have any practice sessions or mock exam results recorded in your database yet.
+
+💡 **How to populate this dashboard**:
+1. Go to the **Exam Arena** or **AI Tutor** tabs to solve practice questions.
+2. Click the **"Simulate Practice Session"** button above to instantly write a realistic test score into your live database.
+3. Toggle the **"Preview with Demo Data"** switch in the header to explore the charts, curriculum mastery meters, and detailed coaching metrics!`);
     }
   }, [activeResults]);
 
@@ -378,7 +425,7 @@ export default function Performance() {
             <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
             <h1 className="text-3xl font-black uppercase tracking-tight">Performance Analytics</h1>
           </div>
-          <p className="text-zinc-400 text-sm flex items-center gap-1.5">
+          <p className="text-zinc-400 text-sm flex items-center gap-1.5 flex-wrap">
             {user ? (
               <>
                 <Database className="w-4 h-4 text-cyan-400" />
@@ -387,9 +434,13 @@ export default function Performance() {
                   <span className="text-emerald-400 font-bold bg-emerald-950/50 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px]">
                     Live Supabase Sync Active
                   </span>
-                ) : (
+                ) : showDemo ? (
                   <span className="text-amber-400 font-bold bg-amber-950/50 border border-amber-500/20 px-2 py-0.5 rounded-full text-[10px]">
                     Showing Demonstration Template
+                  </span>
+                ) : (
+                  <span className="text-zinc-400 font-bold bg-zinc-900 border border-white/5 px-2 py-0.5 rounded-full text-[10px]">
+                    No Practice Sessions Recorded Yet
                   </span>
                 )}
               </>
@@ -402,7 +453,22 @@ export default function Performance() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {results.length === 0 && (
+            <Button
+              variant="outline"
+              onClick={() => setShowDemo(!showDemo)}
+              className={`rounded-xl border border-dashed text-xs font-bold gap-2 h-10 ${
+                showDemo 
+                  ? 'border-amber-500/40 bg-amber-950/20 text-amber-400 hover:bg-amber-950/30' 
+                  : 'border-white/10 bg-zinc-900/40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {showDemo ? 'Hide Demo Data' : 'Preview Demo Data'}
+            </Button>
+          )}
+
           <Button 
             variant="outline" 
             onClick={fetchProgressData}
