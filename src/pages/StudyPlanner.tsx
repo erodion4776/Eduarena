@@ -90,6 +90,7 @@ export default function StudyPlanner() {
   const [selectedDay, setSelectedDay] = useState<string>('Mon');
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [subjectSearch, setSubjectSearch] = useState<string>('');
+  const [mobileTab, setMobileTab] = useState<'calendar' | 'focus'>('calendar');
 
   const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -463,8 +464,34 @@ export default function StudyPlanner() {
             exit={{ opacity: 0 }}
             className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] bg-zinc-950 overflow-hidden"
           >
+            {/* MOBILE NAVIGATION TABS */}
+            <div className="flex lg:hidden border-b border-white/5 bg-zinc-900/40 p-2 gap-2 shrink-0">
+              <button
+                onClick={() => setMobileTab('calendar')}
+                className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 border ${
+                  mobileTab === 'calendar'
+                    ? 'bg-cyan-950/40 border-cyan-500/50 text-cyan-400'
+                    : 'bg-transparent border-transparent text-zinc-400'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" /> Schedule
+              </button>
+              <button
+                onClick={() => setMobileTab('focus')}
+                className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 border ${
+                  mobileTab === 'focus'
+                    ? 'bg-cyan-950/40 border-cyan-500/50 text-cyan-400'
+                    : 'bg-transparent border-transparent text-zinc-400'
+                }`}
+              >
+                <Brain className="w-3.5 h-3.5" /> {selectedDay}'s Focus
+              </button>
+            </div>
+
             {/* WEEKLY TIMELINE ASIDE */}
-            <aside className="w-full lg:w-80 border-r border-white/10 p-6 flex flex-col justify-between shrink-0 bg-zinc-950/80 z-20 overflow-y-auto no-scrollbar">
+            <aside className={`w-full lg:w-80 border-r border-white/10 p-6 flex-col justify-between shrink-0 bg-zinc-950/80 z-20 overflow-y-auto no-scrollbar ${
+              mobileTab === 'calendar' ? 'flex' : 'hidden lg:flex'
+            }`}>
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h2 className="font-black text-sm uppercase tracking-wider flex items-center gap-2 text-white">
@@ -485,7 +512,10 @@ export default function StudyPlanner() {
                     return (
                       <button
                         key={day}
-                        onClick={() => setSelectedDay(day)}
+                        onClick={() => {
+                          setSelectedDay(day);
+                          setMobileTab('focus');
+                        }}
                         className={`w-full p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between cursor-pointer group ${
                           isSelected 
                             ? 'bg-zinc-900 border-cyan-500/50 shadow-lg shadow-cyan-500/5' 
@@ -540,7 +570,9 @@ export default function StudyPlanner() {
             </aside>
 
             {/* MAIN TASKS BOARD AREA */}
-            <main className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 flex flex-col justify-between">
+            <main className={`flex-1 overflow-y-auto p-6 md:p-8 space-y-6 flex-col justify-between ${
+              mobileTab === 'focus' ? 'flex' : 'hidden lg:flex'
+            }`}>
               <div className="space-y-6">
                 {/* Header Metrics Panel */}
                 <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-900/40 border border-white/5 p-6 rounded-3xl backdrop-blur-md">
