@@ -1754,6 +1754,40 @@ Return JSON array with: title, message, type, priority (high/medium/low), action
     }
   });
 
+  app.post("/api/ai/achievements-insight", async (req, res) => {
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      return res.json({
+        insight: "Incredible work on your achievements! Target the **Perfect Score Master** or **Consistency King** milestone to gain massive bonus XP and reinforce your knowledge."
+      });
+    }
+
+    const { unlockedCount, totalCount, totalXp, unlockedList, lockedList } = req.body;
+
+    const prompt = `
+      You are an elite AI Academic Performance Coach for Edu Arena, an African exam-prep platform.
+      Analyze the student's learning achievements and milestones:
+      - Achievements Unlocked: ${unlockedCount} / ${totalCount}
+      - Cumulative XP: ${totalXp} XP
+      - Unlocked Milestones: ${JSON.stringify(unlockedList || [])}
+      - Locked Milestones: ${JSON.stringify(lockedList || [])}
+
+      Provide a short, motivating, and highly strategic tip (exactly 2 sentences, under 60 words) celebrating their unlocked achievements and advising them on which specific locked milestone they should tackle next (e.g., "Perfect Score Master" or "Speed Solver Champion") to maximize their learning momentum. Do not use generic placeholders.
+    `;
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+      res.json({ insight: response.text || "Superb progress! Keep tackling practice quizzes to unlock more badges." });
+    } catch (error) {
+      console.error("Failed to generate achievements insight:", error);
+      res.json({ insight: "Outstanding effort! Focus on completing a full mock exam under 30 minutes to unlock the **Speed Solver Champion** badge today." });
+    }
+  });
+
   app.get("/api/teacher/class-performance", (req, res) => { res.json({ classAverage: 72, topStudents: [{ name: "Alice", score: 95 }], commonStruggleTopics: ["Photosynthesis"] }); });
   app.post("/api/teacher/generate-assignment", async (req, res) => { const { topic, difficulty } = req.body; res.json({ assignment: `Quiz for ${topic} at ${difficulty} level.` }); });
   app.post("/api/teacher/summarize-student", async (req, res) => { const { studentName } = req.body; res.json({ summary: `${studentName} shows great progress but needs more practice on advanced topics.` }); });
