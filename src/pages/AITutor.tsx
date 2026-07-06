@@ -5,7 +5,7 @@ import {
   Brain, Send, BookOpen, Zap,
   GraduationCap, Lightbulb, Sparkles,
   AlertCircle, Trash2, Copy, Check,
-  History, RefreshCw, ChevronDown
+  History, RefreshCw, ChevronDown, WifiOff
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { toast } from 'sonner';
@@ -22,23 +22,238 @@ interface Message {
   timestamp: number;
 }
 
-let _msgCounter = 0;
-function newMsgId(): string {
-  return `msg_${Date.now()}_${++_msgCounter}`;
-}
-
 interface SyllabusTopic {
   label:   string;
   query:   string;
   subject: string;
 }
 
+interface AITutorResponse {
+  response:    string;
+  source?:     string;
+  session_id?: string;
+}
+
+interface HistoryMessage {
+  role:       string;
+  content:    string;
+  created_at: string;
+  metadata?:  { source?: string };
+}
+
 // ─────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────
 const MAX_HISTORY_CONTEXT = 6;
-const SESSION_KEY = 'tutor_chuks_session_id';
+const SESSION_KEY         = 'tutor_chuks_session_id';
+const REQUEST_TIMEOUT_MS  = 30_000; // 30 seconds
 
+let _msgCounter = 0;
+function newMsgId(): string {
+  return `msg_${Date.now()}_${++_msgCounter}`;
+}
+
+// ─────────────────────────────────────────────
+// Cached session ID (avoids redundant reads)
+// ─────────────────────────────────────────────
+let _cachedSessionId: string | null = null;
+
+function getOrCreateSessionId(): string {
+  if (_cachedSessionId) return _cachedSessionId;
+
+  let sessionId = localStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    localStorage.setItem(SESSION_KEY, sessionId);
+  }
+
+  _cachedSessionId = sessionId;
+  return sessionId;
+}
+
+function rotateSessionId(): string {
+  const newId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  localStorage.setItem(SESSION_KEY, newId);
+  _cachedSessionId = newId;
+  return newId;
+}
+
+// ─────────────────────────────────────────────
+// Fetch with timeout helper
+// ─────────────────────────────────────────────
+async function fetchWithTimeout(
+  url:     string,
+  options: RequestInit = {},
+  timeout: number      = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer      = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (err: any) {
+    // Provide a more descriptive error for timeouts
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. The server is taking too long to respond.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ─────────────────────────────────────────────
+// Build auth headers from stored token
+// ─────────────────────────────────────────────
+function getAuthHeaders(): Record<string, string> {
+  // Support both common token storage patterns
+  const token =
+    localStorage.getItem('auth_token') ||
+    localStorage.getItem('supabase_token') ||
+    sessionStorage.getItem('auth_token');
+
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+// ─────────────────────────────────────────────
+// RAG-powered AI call via Express API
+// ─────────────────────────────────────────────
+async function callAITutor(
+  message:  string,
+  history:  { role: 'user' | 'ai'; content: string }[],
+  subject?: string,
+  userId?:  string
+): Promise<AITutorResponse> {
+
+  const sessionId = getOrCreateSessionId();
+
+  // BUG FIX: Trim to last N *pairs* so context is balanced
+  const trimmedHistory = history
+    .slice(-MAX_HISTORY_CONTEXT)
+    .map(m => ({
+      sender: m.role === 'user' ? 'student' : 'tutor',
+      text:   m.content,
+    }));
+
+  let response: Response;
+
+  try {
+    response = await fetchWithTimeout(
+      '/api/ai/tutor',
+      {
+        method:  'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          message,
+          history:    trimmedHistory,
+          subject:    subject ?? null,
+          context:    'exam_prep',
+          session_id: sessionId,
+          user_id:    userId ?? null,
+        }),
+      }
+    );
+  } catch (err: any) {
+    // Network-level failure (offline, CORS, timeout, etc.)
+    if (!navigator.onLine) {
+      throw new Error('You appear to be offline. Please check your internet connection.');
+    }
+    throw new Error(err.message || 'Network error. Please try again.');
+  }
+
+  // Handle specific HTTP error codes with helpful messages
+  if (!response.ok) {
+    let errorMessage = `Server error (${response.status})`;
+
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData?.message || errorData?.error || errorMessage;
+    } catch {
+      // Response body is not JSON — use the status text
+      errorMessage = response.statusText || errorMessage;
+    }
+
+    switch (response.status) {
+      case 400: throw new Error(`Bad request: ${errorMessage}`);
+      case 401: throw new Error('Session expired. Please log in again.');
+      case 403: throw new Error('Access denied. Please check your account.');
+      case 429: throw new Error('Too many requests. Please wait a moment before trying again.');
+      case 500: throw new Error(`AI service error: ${errorMessage}`);
+      case 503: throw new Error('AI service is temporarily unavailable. Please try again in a moment.');
+      default:  throw new Error(errorMessage);
+    }
+  }
+
+  let data: any;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('Invalid response from server. Please try again.');
+  }
+
+  if (!data?.response) {
+    throw new Error('The AI returned an empty response. Please try again.');
+  }
+
+  // Update cached session ID if the server rotated it
+  if (data.session_id && data.session_id !== sessionId) {
+    localStorage.setItem(SESSION_KEY, data.session_id);
+    _cachedSessionId = data.session_id;
+  }
+
+  return {
+    response:   data.response,
+    source:     data.source  ?? undefined,
+    session_id: data.session_id,
+  };
+}
+
+// ─────────────────────────────────────────────
+// Load chat history from Supabase via API
+// ─────────────────────────────────────────────
+async function loadChatHistory(sessionId: string): Promise<Message[]> {
+  try {
+    const response = await fetchWithTimeout(
+      `/api/ai/chat/history?session_id=${encodeURIComponent(sessionId)}&limit=20`,
+      { headers: getAuthHeaders() }
+    );
+
+    if (!response.ok) {
+      console.warn(`History fetch returned ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    if (!Array.isArray(data?.history) || data.history.length === 0) return [];
+
+    return data.history
+      .filter((msg: HistoryMessage) => msg?.role && msg?.content)
+      .map((msg: HistoryMessage) => ({
+        id:        newMsgId(),
+        role:      msg.role === 'user' ? 'user' : 'ai',
+        content:   msg.content,
+        source:    msg.metadata?.source,
+        timestamp: msg.created_at
+          ? new Date(msg.created_at).getTime()
+          : Date.now(),
+      })) as Message[];
+
+  } catch (err) {
+    console.error('Failed to load chat history:', err);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────
+// Syllabus Topics
+// ─────────────────────────────────────────────
 const SYLLABUS_TOPICS: SyllabusTopic[] = [
   {
     label:   'Cell & Organization of Life',
@@ -123,7 +338,6 @@ const QUICK_ACTIONS = [
   },
 ];
 
-// Subject colors for badges
 const SUBJECT_COLORS: Record<string, string> = {
   Biology:     'text-emerald-400 bg-emerald-950/50 border-emerald-500/30',
   Economics:   'text-amber-400 bg-amber-950/50 border-amber-500/30',
@@ -136,92 +350,14 @@ const SUBJECT_COLORS: Record<string, string> = {
 };
 
 // ─────────────────────────────────────────────
-// Get or create a persistent session ID
+// Initial welcome message
 // ─────────────────────────────────────────────
-function getOrCreateSessionId(): string {
-  let sessionId = localStorage.getItem(SESSION_KEY);
-  if (!sessionId) {
-    sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem(SESSION_KEY, sessionId);
-  }
-  return sessionId;
-}
-
-// ─────────────────────────────────────────────
-// RAG-powered AI call via Express API
-// ─────────────────────────────────────────────
-async function callAITutor(
-  message:   string,
-  history:   { role: 'user' | 'ai'; content: string }[],
-  subject?:  string,
-  userId?:   string
-): Promise<{ response: string; source?: string; session_id?: string }> {
-
-  // Get persistent session ID
-  const sessionId = getOrCreateSessionId();
-
-  const trimmedHistory = history
-    .slice(-MAX_HISTORY_CONTEXT)
-    .map(m => ({
-      sender: m.role === 'user' ? 'student' : 'tutor',
-      text:   m.content,
-    }));
-
-  const response = await fetch('/api/ai/tutor', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      history:    trimmedHistory,
-      subject:    subject ?? null,
-      context:    'exam_prep',
-      session_id: sessionId,
-      user_id:    userId ?? null,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  const data = await response.json();
-  if (!data?.response) throw new Error('Empty response from AI tutor');
-
-  // Save returned session ID if different
-  if (data.session_id && data.session_id !== sessionId) {
-    localStorage.setItem(SESSION_KEY, data.session_id);
-  }
-
-  return {
-    response:   data.response,
-    source:     data.source ?? undefined,
-    session_id: data.session_id,
-  };
-}
-
-// ─────────────────────────────────────────────
-// Load chat history from Supabase via API
-// ─────────────────────────────────────────────
-async function loadChatHistory(sessionId: string): Promise<Message[]> {
-  try {
-    const response = await fetch(`/api/ai/chat/history?session_id=${sessionId}&limit=20`);
-    if (!response.ok) return [];
-
-    const data = await response.json();
-    if (!data?.history || data.history.length === 0) return [];
-
-    return data.history.map((msg: any) => ({
-      id:        newMsgId(),
-      role:      msg.role === 'user' ? 'user' : 'ai',
-      content:   msg.content,
-      source:    msg.metadata?.source,
-      timestamp: new Date(msg.created_at).getTime(),
-    }));
-  } catch (err) {
-    console.error('Failed to load chat history:', err);
-    return [];
-  }
-}
+const WELCOME_MESSAGE: Message = {
+  id:        'initial_ai_msg',
+  role:      'ai',
+  content:   'Hello! I am Tutor Chuks, your AI-powered exam prep assistant 🎓\n\nI can help you master WAEC, JAMB, and NECO topics using real past questions and syllabus materials stored in our knowledge base.\n\nAsk me anything or pick a topic from the panel!',
+  timestamp: Date.now(),
+};
 
 // ─────────────────────────────────────────────
 // Copy Button
@@ -230,10 +366,14 @@ function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    toast.success('Copied to clipboard!');
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      toast.success('Copied to clipboard!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Failed to copy text.');
+    }
   };
 
   return (
@@ -244,7 +384,7 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied
         ? <Check className="w-3.5 h-3.5 text-emerald-400" />
-        : <Copy className="w-3.5 h-3.5" />
+        : <Copy  className="w-3.5 h-3.5" />
       }
     </button>
   );
@@ -253,15 +393,40 @@ function CopyButton({ text }: { text: string }) {
 // ─────────────────────────────────────────────
 // Format timestamp
 // ─────────────────────────────────────────────
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour:   '2-digit',
-    minute: '2-digit',
-  });
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 // ─────────────────────────────────────────────
-// Message Bubble Component
+// Offline banner
+// ─────────────────────────────────────────────
+function OfflineBanner() {
+  const [offline, setOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const goOffline = () => setOffline(true);
+    const goOnline  = () => setOffline(false);
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online',  goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online',  goOnline);
+    };
+  }, []);
+
+  if (!offline) return null;
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-rose-400 bg-rose-500/10
+                    border border-rose-500/20 rounded-xl px-3 py-2 mb-3">
+      <WifiOff className="w-3.5 h-3.5 shrink-0" />
+      You are offline. Please check your internet connection.
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Message Bubble
 // ─────────────────────────────────────────────
 function MessageBubble({ msg }: { msg: Message }) {
   return (
@@ -276,7 +441,9 @@ function MessageBubble({ msg }: { msg: Message }) {
 
         {/* Role label */}
         <p className={`text-[10px] font-bold uppercase tracking-wider px-1 ${
-          msg.role === 'user' ? 'text-right text-zinc-500' : 'text-left text-cyan-600'
+          msg.role === 'user'
+            ? 'text-right text-zinc-500'
+            : 'text-left text-cyan-600'
         }`}>
           {msg.role === 'user' ? 'You' : 'Tutor Chuks'}
         </p>
@@ -290,7 +457,6 @@ function MessageBubble({ msg }: { msg: Message }) {
               : 'bg-zinc-900/80 border border-white/5 text-zinc-200 rounded-tl-none'
         }`}>
 
-          {/* Error icon */}
           {msg.isError && (
             <div className="flex items-center gap-2 mb-2 text-rose-400 text-xs font-bold">
               <AlertCircle className="w-3.5 h-3.5" />
@@ -301,25 +467,22 @@ function MessageBubble({ msg }: { msg: Message }) {
           <p className="whitespace-pre-wrap">{msg.content}</p>
         </div>
 
-        {/* Bottom row: source + timestamp + copy */}
+        {/* Source + timestamp + copy */}
         <div className="flex items-center justify-between gap-2 px-1">
           <div className="flex items-center gap-2">
-            {/* Source badge */}
             {msg.source && (
-              <div className="flex items-center gap-1.5 text-[10px] text-emerald-300 font-bold bg-emerald-950/50 px-2 py-1 rounded-lg border border-emerald-500/30">
+              <div className="flex items-center gap-1.5 text-[10px] text-emerald-300
+                              font-bold bg-emerald-950/50 px-2 py-1 rounded-lg
+                              border border-emerald-500/30">
                 <BookOpen className="w-3 h-3" />
                 {msg.source}
               </div>
             )}
           </div>
-
           <div className="flex items-center gap-1">
-            {/* Timestamp */}
             <span className="text-[10px] text-zinc-700 font-mono">
               {formatTime(msg.timestamp)}
             </span>
-
-            {/* Copy button for AI messages */}
             {msg.role === 'ai' && !msg.isError && (
               <CopyButton text={msg.content} />
             )}
@@ -337,15 +500,7 @@ function MessageBubble({ msg }: { msg: Message }) {
 export default function AITutor() {
   const { user } = useAuthStore();
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id:        'initial_ai_msg',
-      role:      'ai',
-      content:   'Hello! I am Tutor Chuks, your AI-powered exam prep assistant 🎓\n\nI can help you master WAEC, JAMB, and NECO topics using real past questions and syllabus materials stored in our knowledge base.\n\nAsk me anything or pick a topic from the panel!',
-      timestamp: Date.now(),
-    },
-  ]);
-
+  const [messages,         setMessages]         = useState<Message[]>([WELCOME_MESSAGE]);
   const [input,            setInput]            = useState('');
   const [isLoading,        setIsLoading]        = useState(false);
   const [activeSubject,    setActiveSubject]     = useState<string | null>(null);
@@ -353,17 +508,21 @@ export default function AITutor() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyLoaded,    setHistoryLoaded]    = useState(false);
   const [showScrollBtn,    setShowScrollBtn]    = useState(false);
+  // Track the specific error message to show targeted retry UI
+  const [lastError,        setLastError]        = useState<string | null>(null);
 
-  const messagesEndRef  = useRef<HTMLDivElement>(null);
-  const inputRef        = useRef<HTMLInputElement>(null);
-  const scrollAreaRef   = useRef<HTMLDivElement>(null);
-  const messagesRef     = useRef<Message[]>(messages);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef       = useRef<HTMLInputElement>(null);
+  const scrollAreaRef  = useRef<HTMLDivElement>(null);
+  // BUG FIX: Store messages in ref so callbacks always see latest value
+  // without needing messages in their dependency arrays
+  const messagesRef    = useRef<Message[]>([WELCOME_MESSAGE]);
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
-  // ── Auto scroll ────────────────────────────
+  // ── Auto-scroll ────────────────────────────
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({
       behavior: smooth ? 'smooth' : 'auto',
@@ -372,9 +531,9 @@ export default function AITutor() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading]);
+  }, [messages, isLoading, scrollToBottom]);
 
-  // ── Show scroll-to-bottom button ──────────
+  // ── Scroll-to-bottom button visibility ────
   const handleScroll = useCallback(() => {
     const el = scrollAreaRef.current;
     if (!el) return;
@@ -382,20 +541,25 @@ export default function AITutor() {
     setShowScrollBtn(distFromBottom > 200);
   }, []);
 
-  // ── Load history from Supabase on mount ───
+  // ── Load history on mount (once, when user is ready) ──
   useEffect(() => {
-    if (!user || historyLoaded) return;
+    // BUG FIX: Guard all early-exit conditions clearly
+    if (!user || historyLoaded || isLoadingHistory) return;
 
     const sessionId = localStorage.getItem(SESSION_KEY);
-    if (!sessionId) return;
+    if (!sessionId) {
+      setHistoryLoaded(true); // Nothing to load — mark done
+      return;
+    }
 
     setIsLoadingHistory(true);
+
     loadChatHistory(sessionId).then(history => {
       if (history.length > 0) {
+        // BUG FIX: Use functional updater — don't close over stale state
         setMessages([
           {
-            id:        'initial_ai_msg',
-            role:      'ai',
+            ...WELCOME_MESSAGE,
             content:   'Hello! I am Tutor Chuks 🎓\n\nI can help you master WAEC, JAMB, and NECO topics. Ask me anything!',
             timestamp: Date.now() - 1000,
           },
@@ -403,10 +567,14 @@ export default function AITutor() {
         ]);
         toast.success(`Loaded ${history.length} messages from your last session!`);
       }
+    }).catch(err => {
+      console.error('History load error:', err);
+      // Non-fatal — just start fresh
+    }).finally(() => {
       setHistoryLoaded(true);
       setIsLoadingHistory(false);
     });
-  }, [user, historyLoaded]);
+  }, [user, historyLoaded, isLoadingHistory]);
 
   // ── Send message ───────────────────────────
   const sendMessage = useCallback(async (text: string, subject?: string) => {
@@ -418,6 +586,8 @@ export default function AITutor() {
       return;
     }
 
+    setLastError(null);
+
     const userMsg: Message = {
       id:        newMsgId(),
       role:      'user',
@@ -425,46 +595,49 @@ export default function AITutor() {
       timestamp: Date.now(),
     };
 
+    // BUG FIX: Snapshot BEFORE adding the new user message
+    // so the user message isn't included in its own history context
+    const historySnapshot = messagesRef.current.map(m => ({
+      role:    m.role,
+      content: m.content,
+    }));
+
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
     setTimeout(() => inputRef.current?.focus(), 20);
 
     try {
-      const historySnapshot = messagesRef.current.map(m => ({
-        role:    m.role,
-        content: m.content,
-      }));
-
       const result = await callAITutor(
         trimmed,
         historySnapshot,
         subject ?? activeSubject ?? undefined,
-        user?.id
+        user.id
       );
 
-      const aiMsg: Message = {
+      setMessages(prev => [...prev, {
         id:        newMsgId(),
         role:      'ai',
         content:   result.response,
         source:    result.source,
         timestamp: Date.now(),
-      };
-
-      setMessages(prev => [...prev, aiMsg]);
+      }]);
 
     } catch (err: any) {
-      console.error('AI Tutor error:', err);
+      const errorText = err?.message || 'Unknown error occurred.';
+      console.error('AI Tutor error:', errorText);
 
+      setLastError(errorText);
       setMessages(prev => [...prev, {
         id:        newMsgId(),
         role:      'ai',
-        content:   'Omo! I am having trouble connecting right now. Please check your connection and try again.',
+        content:   `Sorry, I couldn't get a response right now.\n\n**Reason:** ${errorText}\n\nPlease check your connection and try again.`,
         isError:   true,
         timestamp: Date.now(),
       }]);
 
-      toast.error('Failed to get AI response. Try again!');
+      toast.error(errorText, { duration: 5000 });
+
     } finally {
       setIsLoading(false);
     }
@@ -472,28 +645,32 @@ export default function AITutor() {
 
   // ── Clear conversation ─────────────────────
   const clearConversation = useCallback(async () => {
-    // Clear from Supabase too
     const sessionId = localStorage.getItem(SESSION_KEY);
     if (sessionId) {
       try {
-        await fetch(`/api/ai/chat/history?session_id=${sessionId}`, { method: 'DELETE' });
+        await fetchWithTimeout(
+          `/api/ai/chat/history?session_id=${encodeURIComponent(sessionId)}`,
+          { method: 'DELETE', headers: getAuthHeaders() }
+        );
       } catch (err) {
-        console.error('Failed to clear history from Supabase:', err);
+        console.error('Failed to clear history:', err);
+        // Continue clearing locally even if server call fails
       }
-      // Generate new session
-      const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem(SESSION_KEY, newSessionId);
+      rotateSessionId();
     }
 
-    setMessages([{
+    const freshWelcome: Message = {
       id:        newMsgId(),
       role:      'ai',
       content:   'Conversation cleared! Ready for a fresh start. What would you like to learn today? 📚',
       timestamp: Date.now(),
-    }]);
+    };
+
+    setMessages([freshWelcome]);
     setShowClearConfirm(false);
     setActiveSubject(null);
     setHistoryLoaded(false);
+    setLastError(null);
     setTimeout(() => inputRef.current?.focus(), 20);
     toast.success('Conversation cleared!');
   }, []);
@@ -504,46 +681,54 @@ export default function AITutor() {
     sendMessage(topic.query, topic.subject);
   }, [sendMessage]);
 
-  // ── Retry last message ─────────────────────
+  // ── Retry last user message ────────────────
   const retryLastMessage = useCallback(() => {
-    const msgs = messagesRef.current;
+    const msgs        = messagesRef.current;
+    // BUG FIX: Find the last user message first
     const lastUserMsg = [...msgs].reverse().find(m => m.role === 'user');
-    if (lastUserMsg) {
-      // Remove last AI error message
-      setMessages(prev => prev.filter(
-        m => !(m.isError && m.timestamp > lastUserMsg.timestamp)
-      ));
-      sendMessage(lastUserMsg.content);
-    }
+    if (!lastUserMsg) return;
+
+    // Remove ALL error messages that appeared after the last user message
+    setMessages(prev =>
+      prev.filter(m => !(m.isError === true && m.timestamp > lastUserMsg.timestamp))
+    );
+
+    setLastError(null);
+    // Small delay to let the state update before re-sending
+    setTimeout(() => sendMessage(lastUserMsg.content), 50);
   }, [sendMessage]);
 
-  // Get subject badge color
   const subjectColor = activeSubject
     ? SUBJECT_COLORS[activeSubject] || 'text-cyan-400 bg-cyan-950/40 border-cyan-500/20'
     : '';
+
+  const lastMessageIsError = messages[messages.length - 1]?.isError === true;
 
   // ─────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-zinc-950 text-zinc-100 overflow-hidden">
+    // BUG FIX: Added `relative` so the scroll button is positioned correctly
+    <div className="relative flex h-[calc(100vh-4rem)] bg-zinc-950 text-zinc-100 overflow-hidden">
 
       {/* ── Chat Area ─────────────────────── */}
       <main className="flex-1 flex flex-col min-w-0">
 
         {/* Header */}
-        <header className="p-4 border-b border-white/10 flex items-center justify-between gap-3 shrink-0 bg-zinc-950/80 backdrop-blur-sm">
+        <header className="p-4 border-b border-white/10 flex items-center justify-between
+                           gap-3 shrink-0 bg-zinc-950/80 backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className="p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl">
                 <Brain className="w-6 h-6 text-cyan-400" />
               </div>
-              {/* Online indicator */}
-              <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-zinc-950 animate-pulse" />
+              <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400
+                              rounded-full border-2 border-zinc-950 animate-pulse" />
             </div>
             <div>
               <h1 className="text-xl font-black">Tutor Chuks</h1>
-              <p className="text-[10px] text-zinc-500 font-mono font-bold uppercase tracking-widest flex items-center gap-1 mt-0.5">
+              <p className="text-[10px] text-zinc-500 font-mono font-bold uppercase
+                            tracking-widest flex items-center gap-1 mt-0.5">
                 <Sparkles className="w-3 h-3 text-cyan-400 animate-pulse" />
                 RAG Enhanced · Supabase Connected
               </p>
@@ -551,7 +736,6 @@ export default function AITutor() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Loading history indicator */}
             {isLoadingHistory && (
               <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-mono">
                 <History className="w-3 h-3 animate-spin" />
@@ -559,18 +743,18 @@ export default function AITutor() {
               </div>
             )}
 
-            {/* Active subject badge */}
             {activeSubject && (
-              <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg border ${subjectColor}`}>
+              <span className={`text-[10px] font-black uppercase px-2 py-1
+                               rounded-lg border ${subjectColor}`}>
                 {activeSubject}
               </span>
             )}
 
-            {/* Clear conversation button */}
             {messages.length > 1 && (
               <button
                 onClick={() => setShowClearConfirm(true)}
-                className="p-2 rounded-xl hover:bg-white/5 text-zinc-600 hover:text-rose-400 transition-colors cursor-pointer"
+                className="p-2 rounded-xl hover:bg-white/5 text-zinc-600
+                           hover:text-rose-400 transition-colors cursor-pointer"
                 title="Clear conversation"
               >
                 <Trash2 className="w-4 h-4" />
@@ -585,22 +769,21 @@ export default function AITutor() {
           onScroll={handleScroll}
           className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 scroll-smooth"
         >
-          {/* Session restored banner */}
           {historyLoaded && messages.length > 2 && (
             <div className="flex justify-center">
-              <div className="text-[10px] text-zinc-600 bg-zinc-900/50 border border-white/5 px-3 py-1.5 rounded-full font-mono flex items-center gap-1.5">
+              <div className="text-[10px] text-zinc-600 bg-zinc-900/50 border border-white/5
+                              px-3 py-1.5 rounded-full font-mono flex items-center gap-1.5">
                 <History className="w-3 h-3" />
                 Previous session restored from Supabase
               </div>
             </div>
           )}
 
-          {/* Message list */}
-          {messages.map((msg) => (
+          {messages.map(msg => (
             <MessageBubble key={msg.id} msg={msg} />
           ))}
 
-          {/* Loading indicator */}
+          {/* Typing indicator */}
           <AnimatePresence>
             {isLoading && (
               <motion.div
@@ -609,7 +792,9 @@ export default function AITutor() {
                 exit={{ opacity: 0 }}
                 className="flex justify-start"
               >
-                <div className="flex items-center gap-2 text-cyan-400 text-xs font-mono font-bold bg-zinc-900/60 px-4 py-2.5 rounded-xl border border-white/5">
+                <div className="flex items-center gap-2 text-cyan-400 text-xs font-mono
+                                font-bold bg-zinc-900/60 px-4 py-2.5 rounded-xl
+                                border border-white/5">
                   <Sparkles className="w-3.5 h-3.5 animate-spin" />
                   Searching knowledge base...
                   <span className="flex gap-0.5">
@@ -629,7 +814,7 @@ export default function AITutor() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Scroll to bottom button */}
+        {/* BUG FIX: Scroll button now uses correct relative positioning */}
         <AnimatePresence>
           {showScrollBtn && (
             <motion.button
@@ -637,21 +822,33 @@ export default function AITutor() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
               onClick={() => scrollToBottom()}
-              className="absolute bottom-24 right-80 bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-full p-2 shadow-lg z-10"
+              className="absolute bottom-28 right-4 lg:right-80
+                         bg-cyan-500 hover:bg-cyan-400 text-slate-950
+                         rounded-full p-2 shadow-lg z-10 cursor-pointer"
+              title="Scroll to bottom"
             >
               <ChevronDown className="w-4 h-4" />
             </motion.button>
           )}
         </AnimatePresence>
 
-        {/* Retry button if last message is error */}
-        {messages[messages.length - 1]?.isError && (
-          <div className="px-4 pb-2 flex justify-center">
+        {/* Retry button */}
+        {lastMessageIsError && (
+          <div className="px-4 pb-2 flex flex-col items-center gap-1">
+            {/* Show specific error if available */}
+            {lastError && (
+              <p className="text-[10px] text-rose-400/70 font-mono text-center max-w-xs truncate">
+                {lastError}
+              </p>
+            )}
             <button
               onClick={retryLastMessage}
-              className="flex items-center gap-2 text-xs text-zinc-400 hover:text-white bg-zinc-900/50 hover:bg-zinc-800 border border-white/5 px-4 py-2 rounded-xl transition-colors"
+              disabled={isLoading}
+              className="flex items-center gap-2 text-xs text-zinc-400 hover:text-white
+                         bg-zinc-900/50 hover:bg-zinc-800 border border-white/5
+                         px-4 py-2 rounded-xl transition-colors disabled:opacity-40"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               Retry last message
             </button>
           </div>
@@ -660,9 +857,14 @@ export default function AITutor() {
         {/* Input area */}
         <div className="p-4 bg-zinc-900/50 border-t border-white/5 shrink-0">
 
-          {/* Not logged in warning */}
+          {/* Offline banner */}
+          <OfflineBanner />
+
+          {/* Not-logged-in warning */}
           {!user && (
-            <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 mb-3">
+            <div className="flex items-center gap-2 text-xs text-amber-400
+                            bg-amber-500/10 border border-amber-500/20
+                            rounded-xl px-3 py-2 mb-3">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
               Please log in to use AI Tutor.
             </div>
@@ -681,7 +883,9 @@ export default function AITutor() {
               }}
               disabled={isLoading || !user}
               maxLength={500}
-              className="flex-1 bg-zinc-900 border border-white/5 rounded-xl p-3 outline-none text-sm placeholder:text-zinc-600 focus:border-cyan-500/50 disabled:opacity-40 transition-colors"
+              className="flex-1 bg-zinc-900 border border-white/5 rounded-xl p-3
+                         outline-none text-sm placeholder:text-zinc-600
+                         focus:border-cyan-500/50 disabled:opacity-40 transition-colors"
               placeholder={
                 user
                   ? 'Ask a question about any exam topic...'
@@ -691,13 +895,13 @@ export default function AITutor() {
             <Button
               onClick={() => sendMessage(input)}
               disabled={isLoading || !input.trim() || !user}
-              className="rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold shrink-0 disabled:opacity-40 transition-all"
+              className="rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950
+                         font-bold shrink-0 disabled:opacity-40 transition-all"
             >
               <Send className="w-5 h-5" />
             </Button>
           </div>
 
-          {/* Bottom bar */}
           <div className="flex items-center justify-between mt-2">
             <p className="text-[10px] text-zinc-700 font-mono">
               Enter to send · Shift+Enter for new line
@@ -710,13 +914,16 @@ export default function AITutor() {
       </main>
 
       {/* ── Right Panel ───────────────────── */}
-      <aside className="w-72 border-l border-white/10 bg-zinc-900/20 p-5 hidden lg:flex flex-col gap-5 overflow-y-auto shrink-0">
+      <aside className="w-72 border-l border-white/10 bg-zinc-900/20 p-5
+                        hidden lg:flex flex-col gap-5 overflow-y-auto shrink-0">
 
-        {/* User info */}
         {user && (
-          <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-xs font-black text-white shrink-0">
-              {user.name?.charAt(0).toUpperCase() || 'U'}
+          <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3
+                          flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500
+                            to-blue-600 flex items-center justify-center text-xs
+                            font-black text-white shrink-0">
+              {user.name?.charAt(0).toUpperCase() ?? 'U'}
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-white truncate">{user.name}</p>
@@ -737,7 +944,8 @@ export default function AITutor() {
                 variant="outline"
                 disabled={isLoading || !user}
                 onClick={() => sendMessage(action.query)}
-                className={`justify-start rounded-xl border-white/5 ${action.bg} text-zinc-300 hover:text-white disabled:opacity-40 text-xs`}
+                className={`justify-start rounded-xl border-white/5 ${action.bg}
+                            text-zinc-300 hover:text-white disabled:opacity-40 text-xs`}
               >
                 <action.icon className={`w-4 h-4 mr-2 shrink-0 ${action.color}`} />
                 {action.label}
@@ -753,27 +961,28 @@ export default function AITutor() {
           </h4>
           <div className="space-y-2">
             {SYLLABUS_TOPICS.map((topic, i) => {
-              const color = SUBJECT_COLORS[topic.subject] || 'text-cyan-400';
+              const color    = SUBJECT_COLORS[topic.subject] || 'text-cyan-400';
               const isActive = activeSubject === topic.subject;
               return (
                 <button
                   key={i}
                   onClick={() => handleTopicClick(topic)}
                   disabled={isLoading || !user}
-                  className={`w-full text-left p-2.5 rounded-xl text-xs transition-colors border flex items-start gap-2 group disabled:opacity-40 disabled:cursor-not-allowed ${
+                  className={`w-full text-left p-2.5 rounded-xl text-xs transition-colors
+                              border flex items-start gap-2 group
+                              disabled:opacity-40 disabled:cursor-not-allowed ${
                     isActive
                       ? 'bg-cyan-950/30 border-cyan-500/30 text-white'
                       : 'bg-zinc-900/40 hover:bg-zinc-800 text-zinc-300 hover:text-white border-white/5 hover:border-cyan-500/30'
                   }`}
                 >
-                  <BookOpen className={`w-3.5 h-3.5 mt-0.5 shrink-0 group-hover:scale-110 transition-transform ${
+                  <BookOpen className={`w-3.5 h-3.5 mt-0.5 shrink-0
+                                       group-hover:scale-110 transition-transform ${
                     isActive ? 'text-cyan-400' : 'text-zinc-500'
                   }`} />
                   <div>
                     <span className="block font-medium">{topic.label}</span>
-                    <span className={`text-[10px] mt-0.5 block font-bold ${
-                      color.split(' ')[0]
-                    }`}>
+                    <span className={`text-[10px] mt-0.5 block font-bold ${color.split(' ')[0]}`}>
                       {topic.subject}
                     </span>
                   </div>
@@ -801,15 +1010,17 @@ export default function AITutor() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/70 z-50 flex items-center
+                       justify-center p-4 backdrop-blur-sm"
             onClick={() => setShowClearConfirm(false)}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1,    opacity: 1 }}
+              exit={{ scale: 0.95,    opacity: 0 }}
               onClick={e => e.stopPropagation()}
-              className="bg-zinc-900 border border-white/10 rounded-3xl p-6 max-w-xs w-full space-y-4 shadow-2xl"
+              className="bg-zinc-900 border border-white/10 rounded-3xl p-6
+                         max-w-xs w-full space-y-4 shadow-2xl"
             >
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-rose-500/10 rounded-xl">
