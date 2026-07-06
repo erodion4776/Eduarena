@@ -1,8 +1,22 @@
 [build]
-  command = "npm run build"
-  publish = "dist"
+  command   = "npm run build"
+  publish   = "dist"
+  functions = "netlify/functions"
 
+# Redirect /api/ai/tutor → Netlify Function
 [[redirects]]
-  from = "/*"
-  to = "/index.html"
+  from   = "/api/ai/tutor"
+  to     = "/.netlify/functions/ai-tutor"
+  status = 200
+
+# Redirect /api/ai/chat/history → Netlify Function  
+[[redirects]]
+  from   = "/api/ai/chat/history"
+  to     = "/.netlify/functions/chat-history"
+  status = 200
+
+# SPA fallback — must be last
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
   status = 200

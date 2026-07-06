@@ -753,6 +753,14 @@ export async function runRAGPipeline(
   // Awaited for same reason as step 1 — easier debugging
   const sourceLabel = buildSourceLabel(docs);
 
+  console.log('[RAG Pipeline] Final result:', {
+    response: response.substring(0, 50) + '...',
+    source: sourceLabel,
+    session_id: sessionId,
+    docs_used: docs.length,
+    provider
+  });
+
   await saveChatMessage(sessionId, 'assistant', response, {
     source:    docs[0]?.source ?? null,
     docs_used: docs.length,

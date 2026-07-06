@@ -51,6 +51,8 @@ router.post('/tutor', async (req, res) => {
       user_id
     );
 
+    console.log('[AI Tutor] RAG pipeline completed successfully. Result:', JSON.stringify(result));
+
     // ── BUG FIX: Validate LLM output before sending ──────────────────
     if (!result || !result.response || typeof result.response !== 'string' || !result.response.trim()) {
       console.error('[AI Tutor] RAG pipeline returned empty/null response:', result);
