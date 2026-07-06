@@ -509,6 +509,243 @@ export default function AITutor() {
   // Track the specific error message to show targeted retry UI
   const [lastError,        setLastError]        = useState<string | null>(null);
 
+  // ── Diagnostics / Debug States ───────────────────────────────────────────
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugLoading, setDebugLoading] = useState(false);
+
+  function addLog(msg: string) {
+    const time = new Date().toLocaleTimeString();
+    setDebugLog(prev => [`[${time}] ${msg}`, ...prev]);
+  }
+
+  async function runDiagnostics() {
+    setDebugLog([]);
+    setDebugLoading(true);
+    setShowDebug(true);
+
+    // ── Test 1: Basic connectivity ──────────────────────────────────────
+    addLog('🔍 Starting diagnostics...');
+    addLog(`📱 Online: ${navigator.onLine}`);
+    addLog(`🌐 URL: ${window.location.href}`);
+    addLog(`⏰ Time: ${new Date().toISOString()}`);
+
+    // ── Test 2: Check ENV vars visible to frontend ──────────────────────
+    addLog('─── ENV VARS (frontend) ───');
+    addLog(`VITE_SUPABASE_URL: ${import.meta.env.VITE_SUPABASE_URL ? '✅ set' : '❌ MISSING'}`);
+    addLog(`VITE_SUPABASE_ANON_KEY: ${import.meta.env.VITE_SUPABASE_ANON_KEY ? '✅ set' : '❌ MISSING'}`);
+    addLog(`VITE_GEMINI_API_KEY: ${import.meta.env.VITE_GEMINI_API_KEY ? '✅ set' : '❌ MISSING'}`);
+    addLog(`VITE_GROQ_API_KEY: ${import.meta.env.VITE_GROQ_API_KEY ? '✅ set' : '❌ MISSING'}`);
+    addLog(`VITE_HF_API_KEY: ${import.meta.env.VITE_HF_API_KEY ? '✅ set' : '❌ MISSING'}`);
+
+    // ── Test 3: Ping /.netlify/functions/ai-tutor directly ─────────────
+    addLog('─── TEST 1: Direct Function URL ───');
+    try {
+      const r1 = await fetch('/.netlify/functions/ai-tutor', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ message: 'ping', history: [] }),
+      });
+      const t1 = await r1.text();
+      addLog(`Status: ${r1.status}`);
+      addLog(`Body: ${t1.substring(0, 300) || '⚠️ EMPTY BODY'}`);
+
+      if (!t1.trim()) {
+        addLog('❌ EMPTY BODY — function not deployed or crashing on startup');
+      } else {
+        try {
+          const j1 = JSON.parse(t1);
+          addLog(`Keys: [${Object.keys(j1).join(', ')}]`);
+          if (j1.response) addLog(`✅ response field: ${j1.response.substring(0, 100)}`);
+          else if (j1.error)   addLog(`❌ error field: ${j1.error} — ${j1.message}`);
+          else             addLog(`⚠️ Unknown shape: ${JSON.stringify(j1).substring(0, 200)}`);
+        } catch {
+          addLog(`⚠️ Not JSON: ${t1.substring(0, 200)}`);
+        }
+      }
+    } catch (e: any) {
+      addLog(`❌ Fetch threw: ${e.message}`);
+    }
+
+    // ── Test 4: Ping via /api/ai/tutor redirect ─────────────────────────
+    addLog('─── TEST 2: Via /api redirect ───');
+    try {
+      const r2 = await fetch('/api/ai/tutor', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ message: 'ping', history: [] }),
+      });
+      const t2 = await r2.text();
+      addLog(`Status: ${r2.status}`);
+      addLog(`Body: ${t2.substring(0, 300) || '⚠️ EMPTY BODY'}`);
+
+      if (!t2.trim()) {
+        addLog('❌ EMPTY — redirect in netlify.toml not working');
+      } else {
+        try {
+          const j2 = JSON.parse(t2);
+          addLog(`Keys: [${Object.keys(j2).join(', ')}]`);
+          if (j2.response) addLog(`✅ response: ${j2.response.substring(0, 100)}`);
+          else if (j2.error)   addLog(`❌ error: ${j2.error} — ${j2.message}`);
+        } catch {
+          addLog(`⚠️ Not JSON: ${t2.substring(0, 200)}`);
+        }
+      }
+    } catch (e: any) {
+      addLog(`❌ Fetch threw: ${e.message}`);
+    }
+
+    // ── Test 5: Check if netlify.toml redirects exist ───────────────────
+    addLog('─── TEST 3: netlify.toml check ───');
+    try {
+      const r3 = await fetch('/api/ai/tutor', { method: 'GET' });
+      addLog(`GET /api/ai/tutor → ${r3.status}`);
+      if (r3.status === 404) {
+        addLog('❌ 404 — netlify.toml redirect missing or not deployed');
+      } else if (r3.status === 405) {
+        addLog('✅ Route exists (405 = Method Not Allowed = function is reachable)');
+      } else {
+        addLog(`ℹ️ Status ${r3.status} — route may or may not exist`);
+      }
+    } catch (e: any) {
+      addLog(`❌ GET test threw: ${e.message}`);
+    }
+
+    // ── Test 6: Gemini API directly from frontend ───────────────────────
+    addLog('─── TEST 4: Gemini API direct ───');
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!geminiKey) {
+      addLog('⚠️ VITE_GEMINI_API_KEY not set — skipping Gemini test');
+      addLog('💡 Note: backend uses GEMINI_API_KEY (no VITE_ prefix)');
+    } else {
+      try {
+        const gr = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+          {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'Say "API works" only.' }] }],
+              generationConfig: { maxOutputTokens: 20 },
+            }),
+          }
+        );
+        const gt = await gr.text();
+        addLog(`Gemini status: ${gr.status}`);
+        if (gr.ok) {
+          const gj = JSON.parse(gt);
+          const txt = gj?.candidates?.[0]?.content?.parts?.[0]?.text;
+          addLog(txt ? `✅ Gemini works: "${txt}"` : `⚠️ Gemini ok but no text. Keys: [${Object.keys(gj).join(', ')}]`);
+        } else {
+          addLog(`❌ Gemini failed: ${gt.substring(0, 200)}`);
+        }
+      } catch (e: any) {
+        addLog(`❌ Gemini threw: ${e.message}`);
+      }
+    }
+
+    // ── Test 7: Groq API directly from frontend ─────────────────────────
+    addLog('─── TEST 5: Groq API direct ───');
+    const groqKey = import.meta.env.VITE_GROQ_API_KEY;
+    if (!groqKey) {
+      addLog('⚠️ VITE_GROQ_API_KEY not set — skipping Groq test');
+      addLog('💡 Note: backend uses GROQ_API_KEY (no VITE_ prefix)');
+    } else {
+      try {
+        const qr = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method:  'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${groqKey}`,
+          },
+          body: JSON.stringify({
+            model:      'llama-3.3-70b-versatile',
+            messages:   [{ role: 'user', content: 'Say "API works" only.' }],
+            max_tokens: 20,
+            stream:     false,
+          }),
+        });
+        const qt = await qr.text();
+        addLog(`Groq status: ${qr.status}`);
+        if (qr.ok) {
+          const qj = JSON.parse(qt);
+          const txt = qj?.choices?.[0]?.message?.content;
+          addLog(txt ? `✅ Groq works: "${txt}"` : `⚠️ Groq ok but no text`);
+        } else {
+          addLog(`❌ Groq failed: ${qt.substring(0, 200)}`);
+        }
+      } catch (e: any) {
+        addLog(`❌ Groq threw: ${e.message}`);
+      }
+    }
+
+    // ── Test 8: HuggingFace API directly from frontend ──────────────────
+    addLog('─── TEST 6: HuggingFace API direct ───');
+    const hfKey = import.meta.env.VITE_HF_API_KEY;
+    if (!hfKey) {
+      addLog('⚠️ VITE_HF_API_KEY not set — skipping HF test');
+    } else {
+      try {
+        const hr = await fetch(
+          'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3',
+          {
+            method:  'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'Authorization': `Bearer ${hfKey}`,
+            },
+            body: JSON.stringify({
+              inputs:     'Say "API works" only.',
+              parameters: { max_new_tokens: 20, return_full_text: false },
+            }),
+          }
+        );
+        const ht = await hr.text();
+        addLog(`HF status: ${hr.status}`);
+        if (hr.ok) {
+          const hj = JSON.parse(ht);
+          const txt = hj?.[0]?.generated_text || hj?.generated_text;
+          if (txt)                           addLog(`✅ HF works: "${txt}"`);
+          else if (hj?.error?.includes('loading')) addLog('⏳ HF model loading — try again in 20s');
+          else                               addLog(`⚠️ HF ok but no text: ${JSON.stringify(hj).substring(0, 150)}`);
+        } else {
+          addLog(`❌ HF failed: ${ht.substring(0, 200)}`);
+        }
+      } catch (e: any) {
+        addLog(`❌ HF threw: ${e.message}`);
+      }
+    }
+
+    // ── Test 9: Supabase connectivity ───────────────────────────────────
+    addLog('─── TEST 7: Supabase ───');
+    const sbUrl = import.meta.env.VITE_SUPABASE_URL;
+    const sbKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!sbUrl || !sbKey) {
+      addLog('⚠️ Supabase env vars missing — skipping');
+    } else {
+      try {
+        const sr = await fetch(`${sbUrl}/rest/v1/chat_messages?limit=1`, {
+          headers: {
+            'apikey':        sbKey,
+            'Authorization': `Bearer ${sbKey}`,
+          },
+        });
+        addLog(`Supabase status: ${sr.status}`);
+        if (sr.ok)            addLog('✅ Supabase connected');
+        else if (sr.status === 401) addLog('❌ Supabase 401 — check anon key');
+        else if (sr.status === 404) addLog('⚠️ Supabase 404 — chat_messages table may not exist');
+        else                  addLog(`⚠️ Supabase status: ${sr.status}`);
+      } catch (e: any) {
+        addLog(`❌ Supabase threw: ${e.message}`);
+      }
+    }
+
+    addLog('─────────────────────────');
+    addLog('✅ Diagnostics complete');
+    addLog('📋 Copy all text above and share it to get help');
+    setDebugLoading(false);
+  }
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLInputElement>(null);
   const scrollAreaRef  = useRef<HTMLDivElement>(null);
@@ -758,6 +995,15 @@ export default function AITutor() {
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
+
+            <button
+              onClick={runDiagnostics}
+              className="p-2 rounded-xl hover:bg-white/5 text-zinc-600
+                         hover:text-amber-400 transition-colors cursor-pointer"
+              title="Run diagnostics"
+            >
+              <AlertCircle className="w-4 h-4" />
+            </button>
           </div>
         </header>
 
@@ -1047,6 +1293,112 @@ export default function AITutor() {
                 </Button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Debug Panel ── add before final closing </div> */}
+      <AnimatePresence>
+        {showDebug && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/90 flex flex-col p-3 overflow-hidden"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between mb-2 shrink-0">
+              <div>
+                <h2 className="text-white font-black text-sm">🔧 Debug Diagnostics</h2>
+                <p className="text-zinc-500 text-[10px]">
+                  {debugLoading ? 'Running tests...' : 'Tests complete — read results below'}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {/* Copy all logs */}
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(debugLog.slice().reverse().join('\n'));
+                    toast.success('Logs copied!');
+                  }}
+                  className="flex items-center gap-1 bg-zinc-700 hover:bg-zinc-600
+                             text-white text-xs px-3 py-1.5 rounded-lg"
+                >
+                  <Copy className="w-3 h-3" />
+                  Copy
+                </button>
+                {/* Rerun */}
+                <button
+                  onClick={runDiagnostics}
+                  disabled={debugLoading}
+                  className="flex items-center gap-1 bg-cyan-600 hover:bg-cyan-500
+                             text-white text-xs px-3 py-1.5 rounded-lg disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${debugLoading ? 'animate-spin' : ''}`} />
+                  Rerun
+                </button>
+                {/* Close */}
+                <button
+                  onClick={() => setShowDebug(false)}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-white
+                             text-xs px-3 py-1.5 rounded-lg"
+                >
+                  ✕ Close
+                </button>
+              </div>
+            </div>
+
+            {/* Log output */}
+            <div className="flex-1 overflow-y-auto bg-zinc-950 rounded-xl
+                            border border-white/10 p-3 font-mono text-[11px]
+                            space-y-0.5">
+              {debugLoading && (
+                <div className="flex items-center gap-2 text-cyan-400 animate-pulse mb-2">
+                  <Sparkles className="w-3 h-3 animate-spin" />
+                  Running diagnostics...
+                </div>
+              )}
+
+              {/* Show logs in chronological order */}
+              {[...debugLog].reverse().map((log, i) => {
+                const isError   = log.includes('❌');
+                const isSuccess = log.includes('✅');
+                const isWarn    = log.includes('⚠️') || log.includes('💡') || log.includes('⏳');
+                const isSep     = log.includes('───');
+
+                return (
+                  <div
+                    key={i}
+                    className={`leading-relaxed break-all ${
+                      isSep     ? 'text-zinc-600 mt-2'  :
+                      isError   ? 'text-rose-400'        :
+                      isSuccess ? 'text-emerald-400'     :
+                      isWarn    ? 'text-amber-400'       :
+                                  'text-zinc-300'
+                    }`}
+                  >
+                    {log}
+                  </div>
+                );
+              })}
+
+              {debugLog.length === 0 && !debugLoading && (
+                <p className="text-zinc-600">No logs yet. Press Rerun to start.</p>
+              )}
+            </div>
+
+            {/* What to do with results */}
+            <div className="mt-2 shrink-0 bg-zinc-900 rounded-xl border border-white/5 p-3">
+              <p className="text-zinc-400 text-[10px] font-bold mb-1">
+                📌 How to read these results:
+              </p>
+              <div className="text-zinc-500 text-[10px] space-y-0.5">
+                <p>✅ green = working correctly</p>
+                <p>❌ red = broken — this is your problem</p>
+                <p>⚠️ yellow = warning or missing config</p>
+                <p>Press Copy and share the logs to get help fixing it</p>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
