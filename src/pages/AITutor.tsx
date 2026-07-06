@@ -157,7 +157,7 @@ async function callAITutor(
   let res: Response;
   try {
     res = await fetchWithTimeout(
-      '/api/ai/tutor',
+      '/.netlify/functions/ai-tutor',
       {
         method:  'POST',
         headers: getAuthHeaders(),
@@ -233,7 +233,7 @@ async function callAITutor(
 async function loadChatHistory(sessionId: string): Promise<Message[]> {
   try {
     const response = await fetchWithTimeout(
-      `/api/ai/chat/history?session_id=${encodeURIComponent(sessionId)}&limit=20`,
+      `/.netlify/functions/chat-history?session_id=${encodeURIComponent(sessionId)}&limit=20`,
       { headers: getAuthHeaders() }
     );
 
@@ -534,17 +534,16 @@ export default function AITutor() {
   async function testFunction() {
     setIsTesting(true);
     setTestResult('Testing...');
-
     const results: string[] = [];
 
-    // ── Test 1: Direct function call ──────────────────────────────────────
+    // ── Test 1: AI Tutor function ───────────────────────────────────────
+    results.push('TEST 1: AI Tutor function');
     try {
-      results.push('TEST 1: Direct function call');
-      const r1 = await fetch('/.netlify/functions/ai-tutor', {
+      const r = await fetch('/.netlify/functions/ai-tutor', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          message:    'Say hello in one sentence only.',
+        body: JSON.stringify({
+          message:    'Say hello in one sentence.',
           history:    [],
           subject:    null,
           session_id: 'debug_test_123',
@@ -552,113 +551,80 @@ export default function AITutor() {
         }),
       });
 
-      const text1 = await r1.text();
-      results.push(`Status: ${r1.status}`);
-      results.push(`Body: ${text1.substring(0, 300) || 'EMPTY BODY'}`);
+      const text = await r.text();
+      results.push(`Status: ${r.status}`);
+      results.push(`Body: ${text.substring(0, 200) || 'EMPTY'}`);
 
-      if (text1) {
-        try {
-          const json1 = JSON.parse(text1);
-          results.push(`Keys: [${Object.keys(json1).join(', ')}]`);
-
-          if (json1.response) {
-            results.push(`✅ SUCCESS! response = "${json1.response.substring(0, 100)}"`);
-            results.push(`Provider used: ${json1.provider || 'unknown'}`);
-          } else if (json1.error) {
-            results.push(`❌ ERROR: ${json1.error}`);
-            results.push(`Message: ${json1.message}`);
-          } else {
-            results.push(`⚠️ No response or error field`);
-          }
-        } catch {
-          results.push(`⚠️ Body is not JSON: ${text1.substring(0, 200)}`);
-        }
+      const json = JSON.parse(text);
+      if (json?.response) {
+        results.push(`✅ Works! Provider: ${json.provider}`);
+        results.push(`Response: "${json.response.substring(0, 80)}"`);
       } else {
-        results.push('❌ EMPTY BODY — function crashed before responding');
+        results.push(`❌ Error: ${json?.message || json?.error}`);
       }
     } catch (e: any) {
-      results.push(`❌ Fetch threw error: ${e.message}`);
+      results.push(`❌ Threw: ${e.message}`);
     }
 
     results.push('─────────────────────');
 
-    // ── Test 2: Via redirect ──────────────────────────────────────────────
+    // ── Test 2: Chat history function ───────────────────────────────────
+    results.push('TEST 2: Chat history function');
     try {
-      results.push('TEST 2: Via /api/ai/tutor redirect');
-      const r2 = await fetch('/api/ai/tutor', {
+      const r = await fetch(
+        '/.netlify/functions/chat-history?session_id=debug_test_123',
+        { method: 'GET' }
+      );
+
+      const text = await r.text();
+      results.push(`Status: ${r.status}`);
+      results.push(`Body: ${text.substring(0, 200) || 'EMPTY'}`);
+
+      const json = JSON.parse(text);
+      if (Array.isArray(json?.history)) {
+        results.push(`✅ Works! Messages found: ${json.history.length}`);
+      } else {
+        results.push(`❌ Unexpected: ${JSON.stringify(json).substring(0, 100)}`);
+      }
+    } catch (e: any) {
+      results.push(`❌ Threw: ${e.message}`);
+    }
+
+    results.push('─────────────────────');
+
+    // ── Test 3: Full chat flow ───────────────────────────────────────────
+    results.push('TEST 3: Full chat with subject');
+    try {
+      const r = await fetch('/.netlify/functions/ai-tutor', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          message:    'Say hello in one sentence only.',
+        body: JSON.stringify({
+          message:    'What is photosynthesis?',
           history:    [],
-          subject:    null,
-          session_id: 'debug_test_456',
-          user_id:    null,
+          subject:    'Biology',
+          session_id: 'debug_test_bio',
+          user_id:    user?.id || null,
         }),
       });
 
-      const text2 = await r2.text();
-      results.push(`Status: ${r2.status}`);
-      results.push(`Body: ${text2.substring(0, 300) || 'EMPTY BODY'}`);
+      const text = await r.text();
+      results.push(`Status: ${r.status}`);
+      const json = JSON.parse(text);
 
-      if (text2) {
-        try {
-          const json2 = JSON.parse(text2);
-          results.push(`Keys: [${Object.keys(json2).join(', ')}]`);
-
-          if (json2.response) {
-            results.push(`✅ REDIRECT WORKS! response = "${json2.response.substring(0, 100)}"`);
-          } else if (json2.error) {
-            results.push(`❌ ERROR: ${json2.error} — ${json2.message}`);
-          }
-        } catch {
-          results.push(`⚠️ Not JSON: ${text2.substring(0, 200)}`);
-        }
+      if (json?.response) {
+        results.push(`✅ Full flow works!`);
+        results.push(`Provider: ${json.provider}`);
+        results.push(`Response length: ${json.response.length} chars`);
+        results.push(`Preview: "${json.response.substring(0, 100)}"`);
       } else {
-        results.push('❌ EMPTY — redirect broken');
+        results.push(`❌ Error: ${json?.message}`);
       }
     } catch (e: any) {
-      results.push(`❌ Fetch threw: ${e.message}`);
+      results.push(`❌ Threw: ${e.message}`);
     }
 
     results.push('─────────────────────');
-
-    // ── Test 3: Check env vars reaching function ──────────────────────────
-    try {
-      results.push('TEST 3: ENV var check via function');
-      const r3 = await fetch('/.netlify/functions/ai-tutor', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          message:    '__env_check__',
-          history:    [],
-          subject:    null,
-          session_id: 'debug_env_789',
-          user_id:    null,
-        }),
-      });
-      const text3 = await r3.text();
-      results.push(`Status: ${r3.status}`);
-
-      if (text3) {
-        const json3 = JSON.parse(text3);
-        if (json3.response) {
-          results.push(`✅ Got response — all env vars OK`);
-          results.push(`Provider: ${json3.provider}`);
-        } else {
-          results.push(`❌ Error: ${json3.message}`);
-          // This tells us WHICH provider failed
-          if (json3.message?.includes('GEMINI')) results.push('🔑 GEMINI_API_KEY missing or wrong');
-          if (json3.message?.includes('GROQ'))   results.push('🔑 GROQ_API_KEY missing or wrong');
-          if (json3.message?.includes('HF'))     results.push('🔑 HF_API_KEY missing or wrong');
-        }
-      }
-    } catch (e: any) {
-      results.push(`❌ Test 3 threw: ${e.message}`);
-    }
-
-    results.push('─────────────────────');
-    results.push('DONE — copy and share these results');
+    results.push('✅ All tests complete');
 
     setTestResult(results.join('\n'));
     setIsTesting(false);
@@ -1034,7 +1000,7 @@ export default function AITutor() {
     if (sessionId) {
       try {
         await fetchWithTimeout(
-          `/api/ai/chat/history?session_id=${encodeURIComponent(sessionId)}`,
+          `/.netlify/functions/chat-history?session_id=${encodeURIComponent(sessionId)}`,
           { method: 'DELETE', headers: getAuthHeaders() }
         );
       } catch (err) {
