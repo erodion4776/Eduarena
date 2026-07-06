@@ -142,10 +142,10 @@ async function callAITutor(
       text:   m.content,
     }));
 
-  let response: Response;
-
+  // ── 1. Make the request ──────────────────────────────────────────────────
+  let res: Response;
   try {
-    response = await fetchWithTimeout(
+    res = await fetchWithTimeout(
       '/api/ai/tutor',
       {
         method:  'POST',
@@ -161,26 +161,27 @@ async function callAITutor(
       }
     );
   } catch (err: any) {
-    // Network-level failure (offline, CORS, timeout, etc.)
     if (!navigator.onLine) {
       throw new Error('You appear to be offline. Please check your internet connection.');
     }
     throw new Error(err.message || 'Network error. Please try again.');
   }
 
-  // Handle specific HTTP error codes with helpful messages
-  if (!response.ok) {
-    let errorMessage = `Server error (${response.status})`;
+  // ── 2. Read the body ONCE as text ────────────────────────────────────────
+  const rawText = await res.text();
 
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData?.message || errorData?.error || errorMessage;
-    } catch {
-      // Response body is not JSON — use the status text
-      errorMessage = response.statusText || errorMessage;
-    }
+  // ── 3. Parse JSON safely ─────────────────────────────────────────────────
+  let data: Record<string, any>;
+  try {
+    data = JSON.parse(rawText || '{}');
+  } catch {
+    throw new Error(`Server returned invalid JSON (HTTP ${res.status}). First 200 chars: ${rawText.substring(0, 200)}`);
+  }
 
-    switch (response.status) {
+  // ── 4. Handle HTTP errors using the parsed body ──────────────────────────
+  if (!res.ok) {
+    const errorMessage = data?.message || data?.error || res.statusText || `Server error (${res.status})`;
+    switch (res.status) {
       case 400: throw new Error(`Bad request: ${errorMessage}`);
       case 401: throw new Error('Session expired. Please log in again.');
       case 403: throw new Error('Access denied. Please check your account.');
@@ -191,15 +192,8 @@ async function callAITutor(
     }
   }
 
-  let data: any;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error('Invalid response from server. Please try again.');
-  }
-
-  // BUG FIX: More descriptive check — log what we actually got
-  if (!data?.response) {
+  // ── 5. Validate the `response` field ─────────────────────────────────────
+  if (typeof data?.response !== 'string' || !data.response.trim()) {
     console.error('[callAITutor] Unexpected response shape:', data);
     throw new Error(
       `Unexpected response from server. Got keys: [${Object.keys(data || {}).join(', ')}]`
