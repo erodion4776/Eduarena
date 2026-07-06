@@ -624,6 +624,35 @@ export default function AITutor() {
     }
 
     results.push('─────────────────────');
+
+    // ── Test 4: Gemini API key check ─────────────────────────────────────
+    results.push('TEST 4: Gemini API key check');
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY || 'NOT_SET'}`,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'Say OK only.' }] }],
+            generationConfig: { maxOutputTokens: 5 },
+          }),
+        }
+      );
+      const text = await r.text();
+      const json = JSON.parse(text);
+      if (json?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        results.push(`✅ Gemini key works from frontend`);
+        results.push(`💡 Check GEMINI_API_KEY in Netlify env vars`);
+      } else {
+        results.push(`❌ Gemini: ${json?.error?.message || 'no response'}`);
+        results.push(`💡 This is why Groq is being used as fallback`);
+      }
+    } catch (e: any) {
+      results.push(`❌ Gemini threw: ${e.message}`);
+    }
+
+    results.push('─────────────────────');
     results.push('✅ All tests complete');
 
     setTestResult(results.join('\n'));
