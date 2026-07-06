@@ -528,6 +528,142 @@ export default function AITutor() {
   const [showDebug, setShowDebug] = useState(false);
   const [debugLoading, setDebugLoading] = useState(false);
 
+  const [testResult, setTestResult] = useState<string>('');
+  const [isTesting, setIsTesting]   = useState(false);
+
+  async function testFunction() {
+    setIsTesting(true);
+    setTestResult('Testing...');
+
+    const results: string[] = [];
+
+    // ── Test 1: Direct function call ──────────────────────────────────────
+    try {
+      results.push('TEST 1: Direct function call');
+      const r1 = await fetch('/.netlify/functions/ai-tutor', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          message:    'Say hello in one sentence only.',
+          history:    [],
+          subject:    null,
+          session_id: 'debug_test_123',
+          user_id:    null,
+        }),
+      });
+
+      const text1 = await r1.text();
+      results.push(`Status: ${r1.status}`);
+      results.push(`Body: ${text1.substring(0, 300) || 'EMPTY BODY'}`);
+
+      if (text1) {
+        try {
+          const json1 = JSON.parse(text1);
+          results.push(`Keys: [${Object.keys(json1).join(', ')}]`);
+
+          if (json1.response) {
+            results.push(`✅ SUCCESS! response = "${json1.response.substring(0, 100)}"`);
+            results.push(`Provider used: ${json1.provider || 'unknown'}`);
+          } else if (json1.error) {
+            results.push(`❌ ERROR: ${json1.error}`);
+            results.push(`Message: ${json1.message}`);
+          } else {
+            results.push(`⚠️ No response or error field`);
+          }
+        } catch {
+          results.push(`⚠️ Body is not JSON: ${text1.substring(0, 200)}`);
+        }
+      } else {
+        results.push('❌ EMPTY BODY — function crashed before responding');
+      }
+    } catch (e: any) {
+      results.push(`❌ Fetch threw error: ${e.message}`);
+    }
+
+    results.push('─────────────────────');
+
+    // ── Test 2: Via redirect ──────────────────────────────────────────────
+    try {
+      results.push('TEST 2: Via /api/ai/tutor redirect');
+      const r2 = await fetch('/api/ai/tutor', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          message:    'Say hello in one sentence only.',
+          history:    [],
+          subject:    null,
+          session_id: 'debug_test_456',
+          user_id:    null,
+        }),
+      });
+
+      const text2 = await r2.text();
+      results.push(`Status: ${r2.status}`);
+      results.push(`Body: ${text2.substring(0, 300) || 'EMPTY BODY'}`);
+
+      if (text2) {
+        try {
+          const json2 = JSON.parse(text2);
+          results.push(`Keys: [${Object.keys(json2).join(', ')}]`);
+
+          if (json2.response) {
+            results.push(`✅ REDIRECT WORKS! response = "${json2.response.substring(0, 100)}"`);
+          } else if (json2.error) {
+            results.push(`❌ ERROR: ${json2.error} — ${json2.message}`);
+          }
+        } catch {
+          results.push(`⚠️ Not JSON: ${text2.substring(0, 200)}`);
+        }
+      } else {
+        results.push('❌ EMPTY — redirect broken');
+      }
+    } catch (e: any) {
+      results.push(`❌ Fetch threw: ${e.message}`);
+    }
+
+    results.push('─────────────────────');
+
+    // ── Test 3: Check env vars reaching function ──────────────────────────
+    try {
+      results.push('TEST 3: ENV var check via function');
+      const r3 = await fetch('/.netlify/functions/ai-tutor', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          message:    '__env_check__',
+          history:    [],
+          subject:    null,
+          session_id: 'debug_env_789',
+          user_id:    null,
+        }),
+      });
+      const text3 = await r3.text();
+      results.push(`Status: ${r3.status}`);
+
+      if (text3) {
+        const json3 = JSON.parse(text3);
+        if (json3.response) {
+          results.push(`✅ Got response — all env vars OK`);
+          results.push(`Provider: ${json3.provider}`);
+        } else {
+          results.push(`❌ Error: ${json3.message}`);
+          // This tells us WHICH provider failed
+          if (json3.message?.includes('GEMINI')) results.push('🔑 GEMINI_API_KEY missing or wrong');
+          if (json3.message?.includes('GROQ'))   results.push('🔑 GROQ_API_KEY missing or wrong');
+          if (json3.message?.includes('HF'))     results.push('🔑 HF_API_KEY missing or wrong');
+        }
+      }
+    } catch (e: any) {
+      results.push(`❌ Test 3 threw: ${e.message}`);
+    }
+
+    results.push('─────────────────────');
+    results.push('DONE — copy and share these results');
+
+    setTestResult(results.join('\n'));
+    setIsTesting(false);
+  }
+
   function addLog(msg: string) {
     const time = new Date().toLocaleTimeString();
     setDebugLog(prev => [`[${time}] ${msg}`, ...prev]);
@@ -1416,6 +1552,82 @@ export default function AITutor() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Temporary Debug Panel — remove after fixing ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-zinc-950 border-t-2
+                      border-amber-500 p-3 max-h-[30vh] overflow-y-auto">
+
+        {/* Header row */}
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-amber-400 text-xs font-black uppercase tracking-wider">
+            🔧 Debug Panel
+          </p>
+          <div className="flex gap-2">
+            {/* Run test button */}
+            <button
+              onClick={testFunction}
+              disabled={isTesting}
+              className="bg-amber-500 hover:bg-amber-400 text-black text-xs
+                         font-black px-3 py-1.5 rounded-lg disabled:opacity-50
+                         flex items-center gap-1 cursor-pointer"
+            >
+              {isTesting ? (
+                <>
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Testing...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3 h-3" />
+                  Run Test
+                </>
+              )}
+            </button>
+
+            {/* Copy results button */}
+            {testResult && (
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(testResult);
+                  toast.success('Results copied!');
+                }}
+                className="bg-zinc-700 hover:bg-zinc-600 text-white text-xs
+                           font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer"
+              >
+                <Copy className="w-3 h-3" />
+                Copy
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Results output */}
+        {testResult ? (
+          <pre className="text-[11px] font-mono whitespace-pre-wrap break-all leading-relaxed">
+            {testResult.split('\n').map((line, i) => (
+              <span
+                key={i}
+                className={`block ${
+                  line.includes('✅')        ? 'text-emerald-400' :
+                  line.includes('❌')        ? 'text-rose-400'    :
+                  line.includes('⚠️')        ? 'text-amber-400'   :
+                  line.includes('TEST')      ? 'text-cyan-400 font-bold mt-2' :
+                  line.includes('──────')    ? 'text-zinc-600'    :
+                  line.includes('Provider')  ? 'text-purple-400'  :
+                  line.includes('🔑')        ? 'text-rose-300'    :
+                                               'text-zinc-300'
+                }`}
+              >
+                {line}
+              </span>
+            ))}
+          </pre>
+        ) : (
+          <p className="text-zinc-600 text-xs font-mono">
+            Press Run Test to diagnose the connection issue
+          </p>
+        )}
+      </div>
     </div>
   );
 }
