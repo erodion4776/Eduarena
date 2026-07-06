@@ -8,12 +8,14 @@
   from   = "/api/ai/tutor"
   to     = "/.netlify/functions/ai-tutor"
   status = 200
+  force  = true
 
 # Redirect /api/ai/chat/history → Netlify Function  
 [[redirects]]
   from   = "/api/ai/chat/history"
   to     = "/.netlify/functions/chat-history"
   status = 200
+  force  = true
 
 # SPA fallback — must be last
 [[redirects]]
