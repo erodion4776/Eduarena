@@ -198,8 +198,12 @@ async function callAITutor(
     throw new Error('Invalid response from server. Please try again.');
   }
 
+  // BUG FIX: More descriptive check — log what we actually got
   if (!data?.response) {
-    throw new Error('The AI returned an empty response. Please try again.');
+    console.error('[callAITutor] Unexpected response shape:', data);
+    throw new Error(
+      `Unexpected response from server. Got keys: [${Object.keys(data || {}).join(', ')}]`
+    );
   }
 
   // Update cached session ID if the server rotated it

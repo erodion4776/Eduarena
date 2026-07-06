@@ -19,13 +19,30 @@ function getSupabase() {
 
 // ── 1. Post Chat Message (Tutor Endpoint) ──────────────────────────────────
 router.post('/tutor', async (req, res) => {
-  const { message, history, subject, session_id, user_id } = req.body;
-
-  if (!message || !session_id) {
-    return res.status(400).json({ error: 'Missing message or session_id' });
-  }
-
   try {
+    const { message, history, subject, session_id, user_id } = req.body;
+
+    // ── BUG FIX: Validate required fields early ──────────────────────
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({
+        error:   'Bad Request',
+        message: 'The "message" field is required and must be a non-empty string.',
+      });
+    }
+
+    if (!session_id) {
+      return res.status(400).json({ error: 'Missing session_id' });
+    }
+
+    // ── BUG FIX: Log what we received ─────────────────────────
+    console.log('[AI Tutor] Incoming request:', {
+      message:    message.substring(0, 100),
+      historyLen: Array.isArray(history) ? history.length : 0,
+      subject,
+      session_id,
+      user_id,
+    });
+
     const result = await runRAGPipeline(
       message,
       history || [],
@@ -33,10 +50,27 @@ router.post('/tutor', async (req, res) => {
       subject,
       user_id
     );
-    res.json(result);
+
+    // ── BUG FIX: Validate LLM output before sending ──────────────────
+    if (!result || !result.response || typeof result.response !== 'string' || !result.response.trim()) {
+      console.error('[AI Tutor] RAG pipeline returned empty/null response:', result);
+      return res.status(500).json({
+        error:   'Empty LLM Response',
+        message: 'The AI model returned an empty response. Please try again.',
+      });
+    }
+
+    // ── BUG FIX: Always return `response` field ──────────────────────
+    return res.json(result);
+
   } catch (error: any) {
-    console.error('RAG Pipeline Error:', error);
-    res.status(500).json({ error: error.message || 'Failed to execute RAG pipeline' });
+    console.error('[AI Tutor] Unhandled error:', error);
+
+    // ── BUG FIX: Never let Express send an empty body on error ───────
+    return res.status(500).json({
+      error:   'Internal Server Error',
+      message: error?.message || 'Something went wrong. Please try again.',
+    });
   }
 });
 

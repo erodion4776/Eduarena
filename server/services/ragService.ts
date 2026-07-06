@@ -477,12 +477,13 @@ export async function generateRAGResponse(
   const systemPrompt = buildSystemPrompt(context, subject);
   let lastError: Error | null = null;
 
+  console.log(`[AI Tutor] Generating response for: "${question.substring(0, 50)}..."`);
+
   // ── Gemini primary ──────────────────────────────────────────────────────
   const gemini = getGemini();
   if (gemini) {
     try {
       console.log(`🤖 Attempting response via Gemini (${GEMINI_CHAT_MODEL})...`);
-      // ✅ buildGeminiHistory now takes the question and appends it internally
       const contents = buildGeminiHistory(history, question);
 
       const res = await gemini.models.generateContent({
@@ -495,6 +496,8 @@ export async function generateRAGResponse(
       });
 
       const text = res.text?.trim();
+      
+      // ── BUG FIX: Validate output ──────────────────────
       if (!text) throw new Error('Gemini returned empty content.');
 
       console.log(`✅ Response via Gemini ${GEMINI_CHAT_MODEL}`);
@@ -516,6 +519,11 @@ export async function generateRAGResponse(
         content: msg.text,
       }));
 
+      // ── BUG FIX: Check API key exists ──────────────────────
+      if (!process.env.GROQ_API_KEY && !process.env.VITE_GROQ_API_KEY && !process.env.GROK_API_KEY && !process.env.VITE_GROK_API_KEY) {
+        throw new Error('GROQ_API_KEY not configured.');
+      }
+
       const completion = await groqClient.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         temperature: LLM_TEMPERATURE,
@@ -528,6 +536,8 @@ export async function generateRAGResponse(
       });
 
       const text = completion.choices[0]?.message?.content?.trim();
+      
+      // ── BUG FIX: Validate output ──────────────────────
       if (!text) throw new Error('Groq returned empty content.');
 
       console.log(`✅ Response via Groq llama-3.3-70b-versatile (fallback)`);
