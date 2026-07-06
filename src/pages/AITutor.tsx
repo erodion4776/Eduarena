@@ -142,6 +142,17 @@ async function callAITutor(
       text:   m.content,
     }));
 
+  const payload = {
+    message,
+    history:    trimmedHistory,
+    subject:    subject ?? null,
+    context:    'exam_prep',
+    session_id: sessionId,
+    user_id:    userId ?? null,
+  };
+
+  console.log('[callAITutor] Sending request payload:', payload);
+
   // ── 1. Make the request ──────────────────────────────────────────────────
   let res: Response;
   try {
@@ -150,37 +161,39 @@ async function callAITutor(
       {
         method:  'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({
-          message,
-          history:    trimmedHistory,
-          subject:    subject ?? null,
-          context:    'exam_prep',
-          session_id: sessionId,
-          user_id:    userId ?? null,
-        }),
+        body: JSON.stringify(payload),
       }
     );
   } catch (err: any) {
+    console.error('[callAITutor] Network fetch failed:', err);
     if (!navigator.onLine) {
       throw new Error('You appear to be offline. Please check your internet connection.');
     }
     throw new Error(err.message || 'Network error. Please try again.');
   }
 
+  console.log('[callAITutor] Received response status:', res.status);
+
   // ── 2. Read the body ONCE as text ────────────────────────────────────────
   const rawText = await res.text();
+  console.log('[callAITutor] Raw response text length:', rawText.length);
+  console.log('[callAITutor] Raw response preview:', rawText.substring(0, 500));
 
   // ── 3. Parse JSON safely ─────────────────────────────────────────────────
   let data: Record<string, any>;
   try {
     data = JSON.parse(rawText || '{}');
-  } catch {
+  } catch (parseErr) {
+    console.error('[callAITutor] JSON Parse failed on raw text:', rawText);
     throw new Error(`Server returned invalid JSON (HTTP ${res.status}). First 200 chars: ${rawText.substring(0, 200)}`);
   }
+
+  console.log('[callAITutor] Parsed JSON data keys:', Object.keys(data || {}));
 
   // ── 4. Handle HTTP errors using the parsed body ──────────────────────────
   if (!res.ok) {
     const errorMessage = data?.message || data?.error || res.statusText || `Server error (${res.status})`;
+    console.warn('[callAITutor] Server responded with error status:', res.status, errorMessage);
     switch (res.status) {
       case 400: throw new Error(`Bad request: ${errorMessage}`);
       case 401: throw new Error('Session expired. Please log in again.');
@@ -194,7 +207,7 @@ async function callAITutor(
 
   // ── 5. Validate the `response` field ─────────────────────────────────────
   if (typeof data?.response !== 'string' || !data.response.trim()) {
-    console.error('[callAITutor] Unexpected response shape:', data);
+    console.error('[callAITutor] Unexpected response shape — missing response field:', data);
     throw new Error(
       `Unexpected response from server. Got keys: [${Object.keys(data || {}).join(', ')}]`
     );
@@ -202,6 +215,7 @@ async function callAITutor(
 
   // Update cached session ID if the server rotated it
   if (data.session_id && data.session_id !== sessionId) {
+    console.log('[callAITutor] Server rotated session ID:', data.session_id);
     localStorage.setItem(SESSION_KEY, data.session_id);
     _cachedSessionId = data.session_id;
   }
