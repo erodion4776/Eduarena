@@ -690,7 +690,17 @@ async function startServer() {
     saveDb(db);
 
     // ✅ Sync to Supabase
-    await syncUserToSupabase(newUser);
+    if (supabase) {
+      await supabase.from('users_auth').insert({
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        password_hash: newUser.password,
+        role: newUser.role,
+        school_id: newUser.school_id
+      });
+      await syncUserToSupabase(newUser);
+    }
 
     const token = jwt.sign({ userId: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: "7d" });
     res.cookie("token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 24 * 60 * 60 * 1000 });
@@ -701,8 +711,26 @@ async function startServer() {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
 
-    const db = getDb();
-    const user = db.users.find((u: any) => u.email === email);
+    let user = null;
+    
+    // Try Supabase first
+    if (supabase) {
+        const { data, error } = await supabase
+            .from('users_auth')
+            .select('*')
+            .eq('email', email)
+            .single();
+        if (data && !error) {
+            user = { ...data, password: data.password_hash };
+        }
+    }
+    
+    // If not found in Supabase, fallback to db.json
+    if (!user) {
+        const db = getDb();
+        user = db.users.find((u: any) => u.email === email);
+    }
+
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
