@@ -514,13 +514,14 @@ export default function ExamArena() {
     return failed;
   }, [currentSession]);
 
-  const explainFailedQuestion = useCallback(async (q: any) => {
+  const explainFailedQuestion = useCallback(async (q: any, chosenAnswer: string) => {
     if (failedExplanations[q.id] || loadingExplanations[q.id]) return;
     setLoadingExplanations(prev => ({ ...prev, [q.id]: true }));
     try {
       const response = await aiTutor.askTutorChuksLive(
         'Explain why this is correct and why my choice was wrong.',
-        q
+        q,
+        chosenAnswer
       );
       setFailedExplanations(prev => ({ ...prev, [q.id]: response }));
     } catch (err) {
@@ -539,12 +540,14 @@ export default function ExamArena() {
     try {
       for (const item of failedQuestions) {
         const q = item.question;
+        const chosen = item.chosen;
         if (!failedExplanations[q.id]) {
           setLoadingExplanations(prev => ({ ...prev, [q.id]: true }));
           try {
             const response = await aiTutor.askTutorChuksLive(
               'Explain why this is correct and why my choice was wrong.',
-              q
+              q,
+              chosen
             );
             setFailedExplanations(prev => ({ ...prev, [q.id]: response }));
           } catch (err) {
@@ -1223,7 +1226,7 @@ export default function ExamArena() {
                               Understand this topic before the real exam.
                             </span>
                             <Button
-                              onClick={() => explainFailedQuestion(q)}
+                              onClick={() => explainFailedQuestion(q, item.chosen)}
                               disabled={isLoading}
                               className="bg-cyan-950/60 hover:bg-cyan-900 text-cyan-400 border border-cyan-500/30 font-black text-xs uppercase px-4 py-3 rounded-xl flex items-center gap-1.5 disabled:opacity-50"
                             >
