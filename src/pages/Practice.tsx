@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
+import AIChatWidget from '@/src/components/ai/AIChatWidget';
 
 // ── Module-level constants ──────────────────────────────────
 const EXAM_TYPES = ['JAMB', 'WAEC', 'NECO'] as const;
@@ -131,7 +132,7 @@ export default function Practice() {
 
     const fetchHistories = async () => {
       try {
-        const res = await fetch('/api/stats', { signal });
+        const res = await fetch('/.netlify/functions/stats', { signal });
         if (res.ok) {
           const data = await res.json();
           if (data?.recentPractices) {
@@ -959,6 +960,7 @@ export default function Practice() {
           </div>
         </section>
       )}
+      <AIChatWidget />
     </div>
   );
 }
