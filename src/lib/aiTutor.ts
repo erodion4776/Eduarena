@@ -92,6 +92,7 @@ function buildContext(question: ALOCQuestion, vaultTotal: number): string {
     `DATA_SOURCE: ${question.source === 'vault' ? 'GLOBAL_VAULT' : 'LIVE_SATELLITE'}`,
     `VAULT_TOTAL: ${vaultTotal}`,
     `SECTION/INSTRUCTION: ${question.section  ?? 'N/A'}`,
+    `SUBJECT: ${question.subject ?? 'N/A'}`,
     `PASSAGE: ${question.passage  ?? 'N/A'}`,
     `VISUAL_DIAGRAM_PRESENT: ${question.image ? 'YES' : 'NO'}`,
     `QUESTION: ${question.question}`,
@@ -140,15 +141,15 @@ export const aiTutor = {
     const context = buildContext(question, stats.total);
 
     const systemInstruction = `You are Tutor Chuks, a brilliant and direct Nigerian teacher.
-Use the following question data, including SECTION/SYLLABUS context, to help the student:
+Use the following question data, including SUBJECT and SECTION/SYLLABUS context, to help the student:
 ${context}
 STUDENT_CHOICE: ${userChoice}
 
 Your task:
 - Explain clearly why the correct answer is ${question.answer.toUpperCase()}.
-- Reference the specific SECTION if available in the context.
+- Reference the specific SUBJECT and SECTION if available in the context.
 - Use a relatable Nigerian analogy to make it memorable.
-- Explain why the student's choice (${userChoice}) was wrong, based on the correct syllabus knowledge.
+- Explain why the student's choice (${userChoice}) was wrong, based on your deep knowledge of the Nigerian ${question.subject || 'curriculum'} syllabus. If the provided explanation in context is generic, use your own expert knowledge to give a detailed, academic explanation.
 - Mention subtly that our system is growing smarter (vault now has ${stats.total} questions synced).
 - Be extremely concise — under 80 words. Speak like a trusted mentor.`;
 
