@@ -292,6 +292,7 @@ export default function ExamArena() {
   const [failedExplanations, setFailedExplanations] = useState<Record<string, { answer: string; provider: string }>>({});
   const [loadingExplanations, setLoadingExplanations] = useState<Record<string, boolean>>({});
   const [explainingAll,      setExplainingAll]      = useState(false);
+  const [debugLogs,          setDebugLogs]          = useState<any[]>([]);
 
   // ── Refs ────────────────────────────────────
   const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -523,6 +524,7 @@ export default function ExamArena() {
         q,
         chosenAnswer
       );
+      setDebugLogs(prev => [...prev, { timestamp: new Date().toISOString(), type: 'TUTOR_REQUEST', questionId: q.id, choice: chosenAnswer, response: response.content }]);
       setFailedExplanations(prev => ({ ...prev, [q.id]: response }));
     } catch (err) {
       console.error(err);
@@ -549,6 +551,7 @@ export default function ExamArena() {
               q,
               chosen
             );
+            setDebugLogs(prev => [...prev, { timestamp: new Date().toISOString(), type: 'TUTOR_REQUEST', questionId: q.id, choice: chosen, response: response.content }]);
             setFailedExplanations(prev => ({ ...prev, [q.id]: response }));
           } catch (err) {
             console.warn(`Failed to explain question ${q.id}`, err);
@@ -1405,6 +1408,18 @@ export default function ExamArena() {
           </motion.div>
         )}
       </AnimatePresence>
+      {debugLogs.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-50 bg-black/90 border border-cyan-500/30 p-4 rounded-xl text-xs text-white max-h-64 overflow-auto max-w-xs shadow-xl">
+          <h4 className="font-bold text-cyan-400 mb-2">Debug: AI Interactions</h4>
+          {debugLogs.map((log, i) => (
+            <div key={i} className="mb-2 border-b border-white/10 pb-1">
+              <p className="text-[10px] text-zinc-400">{log.timestamp}</p>
+              <p className="text-cyan-300">QID: {log.questionId} | Choice: {log.choice}</p>
+              <p className="text-[10px] truncate">{log.response}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
