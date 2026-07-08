@@ -170,7 +170,7 @@ export default function Achievements() {
       const unlockedList = achievements.filter(a => a.isUnlocked).map(a => a.title);
       const lockedList = achievements.filter(a => !a.isUnlocked).map(a => a.title);
 
-      const response = await fetch('/api/ai/achievements-insight', {
+      const response = await fetch('/.netlify/functions/achievements-insight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -482,7 +482,7 @@ export const useNeuralVaultStore = create<NeuralVaultState>((set, get) => ({
 
     // ── Persist to server ─────────────────────────────────────────────────
     try {
-      const res = await fetch('/api/practice/session/save-result', {
+      const res = await fetch('/.netlify/functions/practice-session-save-result', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
