@@ -30,6 +30,7 @@ export default function ExamArena({ onExit }: { onExit: () => void }) {
   const [intervention, setIntervention] = useState<{answer: string, source?: string} | null>(null);
   const [isLoadingIntervention, setIsLoadingIntervention] = useState(false);
   const [timeLeft, setTimeLeft] = useState(60 * 45); // 45 mins
+  const [debugLogs,          setDebugLogs]          = useState<any[]>([]);
 
   const q = MOCK_QUESTIONS[currentIdx];
 
@@ -55,6 +56,7 @@ export default function ExamArena({ onExit }: { onExit: () => void }) {
       setIsWrong(true);
       setIsLoadingIntervention(true);
       const res = await aiRouter.getIntervention(q.topic);
+      setDebugLogs(prev => [...prev, { timestamp: new Date().toISOString(), type: 'INTERVENTION', topic: q.topic, response: res }]);
       setIntervention(res);
       setIsLoadingIntervention(false);
     }
@@ -201,6 +203,18 @@ export default function ExamArena({ onExit }: { onExit: () => void }) {
           )}
         </AnimatePresence>
       </div>
+      {debugLogs.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-[200] bg-black/90 border border-cyan-500/30 p-4 rounded-xl text-xs text-white max-h-64 overflow-auto max-w-xs shadow-xl">
+          <h4 className="font-bold text-cyan-400 mb-2">Debug: Mock AI Interventions</h4>
+          {debugLogs.map((log, i) => (
+            <div key={i} className="mb-2 border-b border-white/10 pb-1">
+              <p className="text-[10px] text-zinc-400">{log.timestamp}</p>
+              <p className="text-cyan-300">Topic: {log.topic}</p>
+              <p className="text-[10px] truncate">{JSON.stringify(log.response)}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
