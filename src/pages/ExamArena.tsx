@@ -88,6 +88,11 @@ async function persistResultsToSupabase(
   session: any,
   results: SessionResult
 ): Promise<void> {
+  if (!supabase) {
+    console.warn('Supabase client not initialized — skipping persistence.');
+    return;
+  }
+
   const { data: sessionData, error: sessionError } = await supabase
     .from('exam_sessions')
     .insert({
@@ -107,6 +112,10 @@ async function persistResultsToSupabase(
   if (sessionError) throw sessionError;
 
   if (sessionData?.id && results.subjectBreakdown.length > 0) {
+    if (!supabase) {
+        console.warn('Supabase client not initialized — skipping subject results.');
+        return;
+    }
     const { error: subError } = await supabase
       .from('session_subject_results')
       .insert(

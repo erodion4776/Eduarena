@@ -26,6 +26,7 @@ function buildSystemPrompt(ragContext, subject) {
     'Keep answers to 2 to 4 paragraphs unless more is needed.',
     'Always end with a short encouraging line.',
     'If unsure about something say so honestly.',
+    'Use syllabus/section context from reference material if available to explain WHY the student choice was wrong compared to the correct answer.'
   ].join(' ');
 
   if (subject) {
