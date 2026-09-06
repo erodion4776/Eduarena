@@ -174,7 +174,7 @@ export default function QuestionFactory() {
   };
 
   const handleDeleteQuestion = async (id: string) => {
-    if (!confirm('Delete this question permanently from EduArena?')) return;
+    if (!confirm('Delete this question permanently from Edvenia?')) return;
     try {
       const res = await fetch(`/api/admin/questions/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete operation failed');
@@ -723,7 +723,7 @@ export default function QuestionFactory() {
                     <div>
                         <h4 className="text-[10px] font-black uppercase text-amber-900 tracking-widest">Integrity Protocol</h4>
                         <p className="text-xs font-bold text-amber-700 leading-relaxed mt-1">
-                            "EduArena has a strict 'One Question, One Instance' policy. Duplicate checker is active—ensure every LaTeX formula matches the paper source exactly."
+                            "Edvenia has a strict 'One Question, One Instance' policy. Duplicate checker is active—ensure every LaTeX formula matches the paper source exactly."
                         </p>
                     </div>
                 </div>
