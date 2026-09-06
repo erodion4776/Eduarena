@@ -347,7 +347,7 @@ export default function Performance() {
     if (activeResults.length > 0) {
       generateAICoachInsight();
     } else {
-      setAiInsight(`👋 **Welcome to Edu Arena!**
+      setAiInsight(`👋 **Welcome to Edvenia!**
 
 You do not have any practice sessions or mock exam results recorded in your database yet.
 
