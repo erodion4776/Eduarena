@@ -6,14 +6,34 @@
   --font-heading: "Montserrat", sans-serif;
   --font-display: "Orbitron", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  
-  /* Arena Mode Colors */
+
+  /* Arena Mode Colors (competitive exam battle screens — unchanged) */
   --color-arena-bg: #0B0E14;
   --color-arena-card: #161B22;
   --color-arena-primary: #7C3AED;
   --color-arena-secondary: #0EA5E9;
   --color-arena-accent: #F43F5E;
   --color-arena-neon: #00F5FF;
+
+  /* ── Edvenia Brand Palette: Deep Indigo + Amber Gold ── */
+  --color-edvenia-indigo-950: #1e1b4b;
+  --color-edvenia-indigo-900: #24215c;
+  --color-edvenia-indigo-800: #312e81;
+  --color-edvenia-indigo-700: #3d3a94;
+  --color-edvenia-indigo-600: #4338ca;
+  --color-edvenia-indigo-500: #4f46e5;
+  --color-edvenia-indigo-400: #6366f1;
+  --color-edvenia-indigo-100: #e0e0fb;
+  --color-edvenia-indigo-50: #f2f1fd;
+
+  --color-edvenia-gold-700: #b45309;
+  --color-edvenia-gold-600: #d97706;
+  --color-edvenia-gold-500: #f59e0b;
+  --color-edvenia-gold-400: #fbbf24;
+  --color-edvenia-gold-300: #fcd34d;
+  --color-edvenia-gold-100: #fef3c7;
+
+  --color-edvenia-cream: #fffaf0;
 }
 
 @layer base {
@@ -39,6 +59,32 @@
 
 .arena-glow {
   box-shadow: 0 0 20px rgba(124, 58, 237, 0.3);
+}
+
+/* ── Edvenia UI utilities (Study / light experience) ── */
+.edvenia-shell {
+  background-color: #fdf6ea;
+  background-image:
+    radial-gradient(circle at 8% 5%, rgba(245, 158, 11, 0.10) 0%, transparent 45%),
+    radial-gradient(circle at 95% 15%, rgba(79, 70, 229, 0.08) 0%, transparent 40%);
+}
+
+.edvenia-gradient {
+  background: linear-gradient(135deg, #312e81 0%, #4f46e5 55%, #6366f1 100%);
+}
+
+.edvenia-gold-gradient {
+  background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+}
+
+.edvenia-card {
+  background-color: #ffffff;
+  border: 1px solid rgba(49, 46, 129, 0.08);
+  box-shadow: 0 8px 24px -12px rgba(30, 27, 75, 0.18);
+}
+
+.edvenia-glow {
+  box-shadow: 0 10px 30px -10px rgba(79, 70, 229, 0.35);
 }
 
 :root {
@@ -128,38 +174,38 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    --background: oklch(0.98 0.012 75);
+    --foreground: oklch(0.22 0.06 275);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: oklch(0.22 0.06 275);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.22 0.06 275);
+    --primary: oklch(0.36 0.14 275);
     --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.94 0.05 90);
+    --secondary-foreground: oklch(0.3 0.1 275);
+    --muted: oklch(0.96 0.015 80);
+    --muted-foreground: oklch(0.48 0.05 275);
+    --accent: oklch(0.77 0.15 75);
+    --accent-foreground: oklch(0.22 0.06 275);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
+    --border: oklch(0.9 0.03 275);
+    --input: oklch(0.92 0.02 275);
+    --ring: oklch(0.55 0.12 275);
+    --chart-1: oklch(0.55 0.12 275);
+    --chart-2: oklch(0.77 0.15 75);
+    --chart-3: oklch(0.65 0.15 320);
+    --chart-4: oklch(0.7 0.15 165);
+    --chart-5: oklch(0.65 0.2 25);
+    --radius: 0.9rem;
+    --sidebar: oklch(1 0 0);
+    --sidebar-foreground: oklch(0.3 0.08 275);
+    --sidebar-primary: oklch(0.36 0.14 275);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar-accent: oklch(0.94 0.06 275);
+    --sidebar-accent-foreground: oklch(0.3 0.12 275);
+    --sidebar-border: oklch(0.92 0.02 275);
+    --sidebar-ring: oklch(0.55 0.12 275);
 }
 
 .dark {
