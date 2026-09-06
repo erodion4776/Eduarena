@@ -40,7 +40,7 @@ export default function Settings() {
   // Load state from localStorage or defaults
   const [profile, setProfile] = useState({
     name: 'Guest Scholar',
-    email: 'guest@eduarena.local',
+    email: 'guest@edvenia.local',
     school: 'Federal Government College, Lagos',
     level: 'SS 3',
     examTarget: 'JAMB',
@@ -383,7 +383,7 @@ export default function Settings() {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ profile, aiSettings, notificationSettings, examPreferences, gamificationSettings, privacySettings, appearance }));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `EduArena_Student_Data_${profile.name.replace(/\s+/g, '_')}.json`);
+    downloadAnchor.setAttribute("download", `Edvenia_Student_Data_${profile.name.replace(/\s+/g, '_')}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
