@@ -29,7 +29,7 @@ console.log('Supabase client:', supabase ? '✅ Connected' : '❌ Not configured
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const JWT_SECRET = process.env.JWT_SECRET || "eduarena-secret-key-123-fallback-safe-default-key";
+const JWT_SECRET = process.env.JWT_SECRET || "edvenia-secret-key-123-fallback-safe-default-key";
 if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
   console.error("❌ CRITICAL SECURITY WARNING: JWT_SECRET environment variable is missing in production environment!");
 }
@@ -1461,7 +1461,7 @@ Return JSON array with: title, message, type, priority (high/medium/low), action
     const db = getDb();
     const feedWithUsers = db.feed.map((item: any) => {
       const user = db.users.find((u: any) => u.id === item.user_id);
-      return { ...item, user: user ? { name: user.name, school: user.school_id } : { name: "System", school: "EduArena" } };
+      return { ...item, user: user ? { name: user.name, school: user.school_id } : { name: "System", school: "Edvenia" } };
     });
     res.json(feedWithUsers.reverse());
   });
@@ -1484,7 +1484,7 @@ Return JSON array with: title, message, type, priority (high/medium/low), action
 
   app.post("/api/social/share-image", (req, res) => {
     const { userId, score, rank } = req.body;
-    res.json({ url: `/images/og-score-${userId}.png?score=${score}&rank=${rank}`, message: `Check out my score of ${score} on EduArena!`, challengeLink: `/arena/challenge/${userId}` });
+    res.json({ url: `/images/og-score-${userId}.png?score=${score}&rank=${rank}`, message: `Check out my score of ${score} on Edvenia!`, challengeLink: `/arena/challenge/${userId}` });
   });
 
   app.get("/api/economy/jackpot", (req, res) => { res.json(getDb().jackpot); });
@@ -1837,7 +1837,7 @@ Return JSON array with: title, message, type, priority (high/medium/low), action
     const { stats, history, mastery } = req.body;
     
     const prompt = `
-      You are an elite AI Academic Performance Coach for Edu Arena, an exam preparation platform for African standardized exams (JAMB, WAEC, NECO).
+      You are an elite AI Academic Performance Coach for Edvenia, an exam preparation platform for African standardized exams (JAMB, WAEC, NECO).
       Analyze the student's learning progress and generate a highly personalized, encouraging, and actionable study recommendation.
 
       Student Performance Data:
@@ -1881,7 +1881,7 @@ Return JSON array with: title, message, type, priority (high/medium/low), action
     const { rank, points, topUsers, activeChallenge } = req.body;
 
     const prompt = `
-      You are an elite AI Academic Performance Coach for Edu Arena, an African exam-prep platform.
+      You are an elite AI Academic Performance Coach for Edvenia, an African exam-prep platform.
       Analyze the student's competitive standing on the Leaderboard and generate a brief, highly motivating, and strategic tip to help them climb.
 
       Leaderboard Context:
@@ -1917,7 +1917,7 @@ Return JSON array with: title, message, type, priority (high/medium/low), action
     const { unlockedCount, totalCount, totalXp, unlockedList, lockedList } = req.body;
 
     const prompt = `
-      You are an elite AI Academic Performance Coach for Edu Arena, an African exam-prep platform.
+      You are an elite AI Academic Performance Coach for Edvenia, an African exam-prep platform.
       Analyze the student's learning achievements and milestones:
       - Achievements Unlocked: ${unlockedCount} / ${totalCount}
       - Cumulative XP: ${totalXp} XP
