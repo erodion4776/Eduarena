@@ -41,7 +41,7 @@ export default function ScholarLounge() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-black tracking-tight">Scholar Lounge</h1>
-          <p className="text-slate-500 font-medium">Connect, compete, and celebrate with the EduArena community.</p>
+          <p className="text-slate-500 font-medium">Connect, compete, and celebrate with the Edvenia community.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" className="rounded-2xl border-2 gap-2">
