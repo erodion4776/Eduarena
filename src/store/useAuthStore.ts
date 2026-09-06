@@ -53,7 +53,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       user: {
         id: '1',
         name: 'Guest Scholar',
-        email: 'guest@eduarena.local',
+        email: 'guest@edvenia.local',
         role: 'admin',
         points: 1500,
         level: 5,
@@ -63,4 +63,3 @@ export const useAuthStore = create<AuthState>((set) => ({
     });
   }
 }));
-
