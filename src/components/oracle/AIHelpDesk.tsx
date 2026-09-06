@@ -49,7 +49,7 @@ export default function AIHelpDesk({ contextQuestion }: { contextQuestion?: any 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: [
-          { text: `System context: You are "Professor Oracle", part of EduArena's AI Help Desk. Explain things like the user is 5 years old. ${contextQuestion ? `The student is currently looking at this question: ${JSON.stringify(contextQuestion)}` : ''}` },
+          { text: `System context: You are "Professor Oracle", part of Edvenia's AI Help Desk. Explain things like the user is 5 years old. ${contextQuestion ? `The student is currently looking at this question: ${JSON.stringify(contextQuestion)}` : ''}` },
           ...messages.map(m => ({ text: `${m.role === 'user' ? 'Student' : 'Professor'}: ${m.text}` })),
           { text: `Student: ${userMessage}` }
         ]
