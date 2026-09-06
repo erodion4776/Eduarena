@@ -37,10 +37,10 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-cyan-400" />
-        <p className="text-sm font-bold uppercase tracking-widest text-zinc-400 animate-pulse">
-          Initializing Edu Arena Session...
+      <div className="flex flex-col items-center justify-center min-h-screen edvenia-shell text-indigo-950 gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-amber-500" />
+        <p className="text-sm font-bold uppercase tracking-widest text-indigo-900/70 animate-pulse">
+          Initializing Edvenia Session...
         </p>
       </div>
     );
@@ -88,6 +88,3 @@ export default function App() {
     </Router>
   );
 }
-
-
-
