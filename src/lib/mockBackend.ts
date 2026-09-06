@@ -1,7 +1,7 @@
 // Mock backend to allow the app to work on static hosts like Netlify without an Express server
 import questionsData from '../data/questions.json';
 
-const LOCAL_STORAGE_KEY = 'eduarena_db';
+const LOCAL_STORAGE_KEY = 'edvenia_db';
 
 const defaultDb = {
   users: [],
