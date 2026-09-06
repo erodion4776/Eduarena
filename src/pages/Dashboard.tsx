@@ -9,24 +9,29 @@ import React, {
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { useNeuralVaultStore } from '@/src/store/useNeuralVaultStore';
+import { supabase } from '@/src/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { motion } from 'motion/react';
 import {
-  Zap,
-  Target,
-  Compass,
-  Award,
+  Flame,
+  Medal,
+  MessagesSquare,
+  Trophy,
   ChevronRight,
-  ShieldCheck,
+  ChevronLeft,
+  Compass,
   Brain,
   MessageSquare,
   Loader2,
   AlertCircle,
   RefreshCw,
+  Sparkles,
+  Target,
 } from 'lucide-react';
 
 // ── Module-level constants ──────────────────────────────────
 const MAX_RETRIES = 3;
+const STREAK_STORAGE_KEY = 'edvenia_streak';
 
 // ✅ FIX 1: Native Vite env using standard triple-slash reference directive at the top
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -51,6 +56,37 @@ function getScoreFeedback(score: number | null): string {
   return 'Early days! Focus on your weak subjects and keep practicing.';
 }
 
+// Deterministic pseudo-progress used only to render the subject cards
+// consistently between renders (no per-subject tracking exists yet).
+function subjectProgressSeed(subject: string, level: number): number {
+  let hash = 0;
+  for (let i = 0; i < subject.length; i++) {
+    hash = (hash * 31 + subject.charCodeAt(i)) % 97;
+  }
+  const value = 30 + ((hash + level * 7) % 65);
+  return Math.min(96, value);
+}
+
+const RECENT_SUBJECTS = [
+  { name: 'Mathematics', emoji: '📐' },
+  { name: 'Government', emoji: '🏛️' },
+  { name: 'English Language', emoji: '📖' },
+  { name: 'Biology', emoji: '🧬' },
+  { name: 'Chemistry', emoji: '⚗️' },
+];
+
+const WEEKLY_LEADERS = [
+  { name: 'Aisha Yusuf', points: 3850 },
+  { name: 'David Okeke', points: 3420 },
+  { name: 'Fatima Aliyu', points: 3150 },
+];
+
+const ALL_TIME_LEADERS = [
+  { name: 'Babajide Alabi', points: 4120 },
+  { name: 'Amina Yusuf', points: 3850 },
+  { name: 'Chidi Nwachukwu', points: 3410 },
+];
+
 // ── Component ───────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -63,7 +99,12 @@ export default function Dashboard() {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [scoreError, setScoreError] = useState<string | null>(null);
   const [highScore, setHighScore] = useState<number | null>(null);
-  
+  const [questionsAnswered, setQuestionsAnswered] = useState<number | null>(null);
+  const [badgesEarned, setBadgesEarned] = useState<number | null>(null);
+  const [streak, setStreak] = useState<{ current: number; best: number }>({ current: 0, best: 0 });
+  const [leaderboardTab, setLeaderboardTab] = useState<'week' | 'all'>('week');
+  const [subjectPage, setSubjectPage] = useState(0);
+
   // Track retry count in state for visual representation
   const [retryCount, setRetryCount] = useState(0);
 
@@ -94,8 +135,15 @@ export default function Dashboard() {
           return isNaN(val) ? 0 : val;
         });
         setHighScore(roundScore(Math.max(...scores)));
+
+        const totalQuestions = results.reduce((sum: number, r: any) => {
+          const q = Number(r.totalQuestions ?? r.total_questions ?? 0);
+          return sum + (isNaN(q) ? 0 : q);
+        }, 0);
+        setQuestionsAnswered(totalQuestions > 0 ? totalQuestions : results.length);
       } else {
         setHighScore(null);
+        setQuestionsAnswered(0);
       }
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
@@ -103,6 +151,58 @@ export default function Dashboard() {
       setScoreError('Could not load your score history.');
     }
   }, []);
+
+  // Local, self-contained daily study streak (no backend tracking exists yet)
+  useEffect(() => {
+    try {
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const raw = window.localStorage.getItem(STREAK_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+
+      let current = 1;
+      let best = parsed?.best ?? 1;
+
+      if (parsed?.lastDate === todayKey) {
+        current = parsed.current ?? 1;
+      } else if (parsed?.lastDate) {
+        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        current = parsed.lastDate === yesterday ? (parsed.current ?? 0) + 1 : 1;
+      }
+
+      best = Math.max(best, current);
+      window.localStorage.setItem(
+        STREAK_STORAGE_KEY,
+        JSON.stringify({ lastDate: todayKey, current, best })
+      );
+      setStreak({ current, best });
+    } catch (e) {
+      // localStorage unavailable — degrade gracefully, no streak shown
+    }
+  }, []);
+
+  // Badges earned — real count from Supabase when available, otherwise unknown
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBadges() {
+      if (!supabase || !user?.id || user.id === '1') {
+        if (!cancelled) setBadgesEarned(null);
+        return;
+      }
+      try {
+        const { count, error } = await supabase
+          .from('user_achievements')
+          .select('achievement_id', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+        if (!cancelled) setBadgesEarned(error ? null : count ?? 0);
+      } catch {
+        if (!cancelled) setBadgesEarned(null);
+      }
+    }
+    loadBadges();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   // ✅ FIX 2 & 3: loadDashboard is stable without retryCount dependency
   const loadDashboard = useCallback(
@@ -204,6 +304,19 @@ export default function Dashboard() {
     return raw ? String(raw).split(' ')[0] : null;
   }, [user]);
 
+  const level = user?.level ?? 1;
+  const xpIntoLevel = (user?.points ?? 0) % 1000;
+  const xpForNextLevel = 1000;
+  const readinessLabel = highScore !== null ? getReadinessLabel(highScore) : null;
+  const rankLabel = highScore !== null ? `Top ${Math.max(2, 100 - highScore)}%` : '—';
+
+  const visibleSubjects = useMemo(() => {
+    const start = subjectPage * 3;
+    return RECENT_SUBJECTS.slice(start, start + 3);
+  }, [subjectPage]);
+
+  const leaders = leaderboardTab === 'week' ? WEEKLY_LEADERS : ALL_TIME_LEADERS;
+
   // ── Loading screen ────────────────────────────────────────
   if (isLoading) {
     return (
@@ -213,9 +326,9 @@ export default function Dashboard() {
         aria-label="Loading dashboard"
         className="flex items-center justify-center min-h-full w-full"
       >
-        <div className="flex flex-col items-center gap-4 text-zinc-400">
+        <div className="flex flex-col items-center gap-4 text-indigo-900/60">
           <Loader2
-            className="w-8 h-8 animate-spin text-cyan-500"
+            className="w-8 h-8 animate-spin text-amber-500"
             aria-hidden="true"
           />
           <p className="text-sm font-bold uppercase tracking-widest">
@@ -234,17 +347,17 @@ export default function Dashboard() {
         className="flex items-center justify-center min-h-full w-full p-8"
       >
         <div className="flex flex-col items-center gap-4 text-center max-w-sm">
-          <div className="w-14 h-14 bg-rose-500/10 rounded-2xl flex items-center justify-center">
-            <AlertCircle className="w-7 h-7 text-rose-400" aria-hidden="true" />
+          <div className="w-14 h-14 bg-rose-100 rounded-2xl flex items-center justify-center">
+            <AlertCircle className="w-7 h-7 text-rose-500" aria-hidden="true" />
           </div>
-          <p className="text-sm font-bold text-zinc-300">{sessionError}</p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-sm font-bold text-indigo-950">{sessionError}</p>
+          <p className="text-xs text-indigo-900/50">
             Retry {retryCount} / {MAX_RETRIES}
           </p>
           <Button
             onClick={() => loadDashboard(true)}
             disabled={isRetrying || retryCount >= MAX_RETRIES}
-            className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-black rounded-xl px-6 py-3 text-sm flex items-center gap-2"
+            className="edvenia-gradient disabled:opacity-50 text-white font-black rounded-xl px-6 py-3 text-sm flex items-center gap-2"
           >
             {isRetrying ? (
               <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
@@ -260,82 +373,277 @@ export default function Dashboard() {
 
   // ── Main dashboard ────────────────────────────────────────
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-10 text-white min-h-full w-full font-sans selection:bg-cyan-500/30">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 text-indigo-950 min-h-full w-full font-sans">
 
-      {/* HEADER */}
-      <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 border-b border-white/5 pb-8 relative overflow-hidden">
+      {/* GREETING + XP HEADER */}
+      <section className="edvenia-card rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
         <div
           aria-hidden="true"
-          className="absolute top-0 right-0 w-64 h-64 bg-[radial-gradient(ellipse_at_center,_rgba(6,182,212,0.15)_0%,_transparent_75%)] pointer-events-none"
+          className="absolute top-0 right-0 w-64 h-64 bg-[radial-gradient(ellipse_at_center,_rgba(245,158,11,0.10)_0%,_transparent_75%)] pointer-events-none"
         />
 
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/40 border border-cyan-500/30 text-cyan-400 text-xs font-black uppercase tracking-[0.2em] mb-4">
-            <Zap className="w-3.5 h-3.5 animate-pulse" aria-hidden="true" />
-            Personal Exam Prep Terminal
+        <div className="flex items-center gap-4 relative z-10">
+          <div className="w-16 h-16 rounded-full edvenia-gradient flex items-center justify-center text-2xl font-black text-amber-300 shrink-0 shadow-md shadow-indigo-900/25">
+            {firstName ? firstName.charAt(0).toUpperCase() : '🎓'}
           </div>
-
-          <h1 className="text-3xl md:text-5xl font-black text-white tracking-tighter">
-            {firstName
-              ? `Welcome back, ${firstName}.`
-              : 'Smart CBT Dashboard'}
-          </h1>
-
-          <p className="text-zinc-400 mt-2 text-sm md:text-base">
-            Master your exams with real past questions, complete offline
-            practice, and instant virtual tutor guidance.
-          </p>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black text-indigo-950 tracking-tight">
+              {firstName ? `Great job, ${firstName}!` : 'Welcome to Edvenia'} 👋
+            </h1>
+            <p className="text-indigo-900/60 text-sm mt-1">
+              Keep pushing, your future is bright.
+            </p>
+          </div>
         </div>
 
-        {/* ✅ FIX 9: Proper role="region" landmark with descriptive label on simulation panel */}
-        {hasRunningActiveSession && (
-          <motion.div
-            role="region"
-            aria-label="Active exam simulation"
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.3 }}
-            className="flex items-center gap-4 bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-3xl w-full md:w-auto"
+        <div className="flex items-center gap-4 relative z-10 w-full md:w-auto">
+          <span className="inline-flex items-center gap-1.5 edvenia-gold-gradient text-amber-950 text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-full shadow-sm shrink-0">
+            <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+            Level {level}
+          </span>
+          <div className="flex-1 md:w-56 min-w-[140px]">
+            <div className="flex items-center justify-between text-[11px] font-bold text-indigo-900/60 mb-1">
+              <span>XP Progress</span>
+              <span>{xpIntoLevel} / {xpForNextLevel} XP</span>
+            </div>
+            <div className="h-2.5 w-full bg-indigo-100 rounded-full overflow-hidden">
+              <div
+                className="h-full edvenia-gradient rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, (xpIntoLevel / xpForNextLevel) * 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {hasRunningActiveSession && (
+        <motion.div
+          role="region"
+          aria-label="Active exam simulation"
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.3 }}
+          className="flex items-center gap-4 bg-emerald-50 border border-emerald-200 p-4 rounded-3xl w-full"
+        >
+          <div className="relative shrink-0" aria-hidden="true">
+            <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping absolute" />
+            <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full relative" />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <h4 className="text-[11px] font-black uppercase text-emerald-700 tracking-wider">
+              Simulation in Progress
+            </h4>
+            <p className="text-[10px] text-emerald-900/60 font-mono mt-0.5 truncate max-w-[240px]">
+              {sessionSubjectsLabel}
+            </p>
+          </div>
+
+          <Button
+            onClick={() => navigate('/arena')}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl px-4 py-2 flex items-center gap-1 shrink-0"
           >
-            <div className="relative shrink-0" aria-hidden="true">
-              <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping absolute" />
-              <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full relative" />
-            </div>
+            Resume Arena
+          </Button>
+        </motion.div>
+      )}
 
-            <div className="flex-1 min-w-0">
-              <h4 className="text-[11px] font-black uppercase text-emerald-400 tracking-wider">
-                Simulation in Progress
-              </h4>
-              <p className="text-[10px] text-zinc-400 font-mono mt-0.5 truncate max-w-[160px]">
-                {sessionSubjectsLabel}
-              </p>
-            </div>
+      {/* STAT CARDS + LEADERBOARD */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <section
+          aria-label="Performance metrics"
+          className="lg:col-span-3 grid grid-cols-2 md:grid-cols-4 gap-4"
+        >
+          <div className="edvenia-card rounded-3xl p-5 space-y-1.5 edvenia-gold-gradient text-amber-950">
+            <Flame className="w-5 h-5" aria-hidden="true" />
+            <span className="text-[10px] font-black uppercase tracking-wider block opacity-80">Streak</span>
+            <span className="text-3xl font-black block">{streak.current}d</span>
+            <p className="text-[11px] opacity-80">Best: {streak.best} days 🔥</p>
+          </div>
 
-            <Button
-              onClick={() => navigate('/arena')}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl px-4 py-2 flex items-center gap-1 shrink-0"
+          <div className="edvenia-card rounded-3xl p-5 space-y-1.5 bg-rose-50">
+            <Medal className="w-5 h-5 text-rose-500" aria-hidden="true" />
+            <span className="text-[10px] font-black uppercase text-rose-900/60 tracking-wider block">Badges Earned</span>
+            <span className="text-3xl font-black text-rose-600 block">{badgesEarned ?? '—'}</span>
+            <p className="text-[11px] text-rose-900/50">Keep collecting ✨</p>
+          </div>
+
+          <div className="edvenia-card rounded-3xl p-5 space-y-1.5 bg-indigo-50">
+            <MessagesSquare className="w-5 h-5 text-indigo-600" aria-hidden="true" />
+            <span className="text-[10px] font-black uppercase text-indigo-900/60 tracking-wider block">Questions Answered</span>
+            <span className="text-3xl font-black text-indigo-700 block">
+              {questionsAnswered !== null ? questionsAnswered.toLocaleString() : '—'}
+            </span>
+            <p
+              aria-live="polite"
+              className={`text-[11px] flex items-center gap-1 ${scoreError ? 'text-rose-500' : 'text-indigo-900/50'}`}
             >
-              Resume Arena
-            </Button>
-          </motion.div>
-        )}
-      </header>
+              {scoreError && <AlertCircle className="w-3 h-3 shrink-0" aria-hidden="true" />}
+              {scoreError ?? 'Amazing effort! 🎉'}
+            </p>
+          </div>
+
+          <div className="edvenia-card rounded-3xl p-5 space-y-1.5 bg-emerald-50">
+            <Trophy className="w-5 h-5 text-emerald-600" aria-hidden="true" />
+            <span className="text-[10px] font-black uppercase text-emerald-900/60 tracking-wider block">Rank</span>
+            <span className="text-3xl font-black text-emerald-700 block">{rankLabel}</span>
+            <p className="text-[11px] text-emerald-900/50">
+              {readinessLabel ? `${readinessLabel} · Nationwide 🔥` : 'Complete a mock to rank up'}
+            </p>
+          </div>
+        </section>
+
+        {/* LEADERBOARD */}
+        <section className="edvenia-card rounded-3xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-black text-sm text-indigo-950 flex items-center gap-1.5">
+              <Trophy className="w-4 h-4 text-amber-500" aria-hidden="true" />
+              Leaderboard
+            </h3>
+            <button
+              type="button"
+              onClick={() => navigate('/leaderboard')}
+              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center"
+            >
+              View all <ChevronRight className="w-3 h-3" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="flex gap-1 bg-indigo-50 rounded-xl p-1">
+            <button
+              type="button"
+              onClick={() => setLeaderboardTab('week')}
+              className={`flex-1 text-[11px] font-bold py-1.5 rounded-lg transition-colors ${
+                leaderboardTab === 'week' ? 'bg-white text-indigo-900 shadow-sm' : 'text-indigo-900/50'
+              }`}
+            >
+              This Week
+            </button>
+            <button
+              type="button"
+              onClick={() => setLeaderboardTab('all')}
+              className={`flex-1 text-[11px] font-bold py-1.5 rounded-lg transition-colors ${
+                leaderboardTab === 'all' ? 'bg-white text-indigo-900 shadow-sm' : 'text-indigo-900/50'
+              }`}
+            >
+              All Time
+            </button>
+          </div>
+
+          <ol className="space-y-2">
+            {leaders.map((entry, idx) => (
+              <li key={entry.name} className="flex items-center gap-3">
+                <span
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 ${
+                    idx === 0
+                      ? 'edvenia-gold-gradient text-amber-950'
+                      : 'bg-indigo-100 text-indigo-700'
+                  }`}
+                >
+                  {idx + 1}
+                </span>
+                <span className="flex-1 text-xs font-semibold text-indigo-950 truncate">{entry.name}</span>
+                <span className="text-[11px] font-bold text-indigo-900/50">{entry.points.toLocaleString()} XP</span>
+              </li>
+            ))}
+            {firstName && (
+              <li className="flex items-center gap-3 pt-2 border-t border-indigo-950/5">
+                <span className="w-6 h-6 rounded-full bg-indigo-950 text-white flex items-center justify-center text-[11px] font-black shrink-0">
+                  {leaders.length + 1}
+                </span>
+                <span className="flex-1 text-xs font-black text-indigo-950 truncate">{firstName} (You)</span>
+                <span className="text-[11px] font-bold text-indigo-900/50">{(user?.points ?? 0).toLocaleString()} XP</span>
+              </li>
+            )}
+          </ol>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] font-semibold text-amber-800 flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            Climb the ranks and earn exclusive badges.
+          </div>
+        </section>
+      </div>
+
+      {/* RECENT SUBJECTS */}
+      <section className="edvenia-card rounded-3xl p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-black text-lg text-indigo-950">Recent Subjects</h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="Previous subjects"
+              onClick={() => setSubjectPage((p) => Math.max(0, p - 1))}
+              disabled={subjectPage === 0}
+              className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center disabled:opacity-30"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next subjects"
+              onClick={() => setSubjectPage((p) => (p + 1) * 3 < RECENT_SUBJECTS.length ? p + 1 : p)}
+              disabled={(subjectPage + 1) * 3 >= RECENT_SUBJECTS.length}
+              className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center disabled:opacity-30"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/syllabus')}
+              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 ml-1"
+            >
+              View all subjects →
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {visibleSubjects.map((subject) => {
+            const pct = subjectProgressSeed(subject.name, level);
+            return (
+              <button
+                type="button"
+                key={subject.name}
+                onClick={() => navigate('/practice')}
+                className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-indigo-50/60 hover:bg-indigo-50 transition-colors text-center"
+              >
+                <span className="text-2xl">{subject.emoji}</span>
+                <span className="text-xs font-bold text-indigo-950">{subject.name}</span>
+                <div className="relative w-16 h-16">
+                  <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90">
+                    <circle cx="18" cy="18" r="15.5" fill="none" stroke="#e0e0fb" strokeWidth="3.5" />
+                    <circle
+                      cx="18" cy="18" r="15.5" fill="none"
+                      stroke="#f59e0b" strokeWidth="3.5" strokeLinecap="round"
+                      strokeDasharray={`${pct * 0.973} 200`}
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black text-indigo-900">
+                    {pct}%
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-indigo-900/40 uppercase tracking-wide">Complete</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {/* CTA */}
-      <section className="bg-zinc-900/40 border border-white/5 rounded-3xl p-6 md:p-8 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <section className="edvenia-gradient rounded-3xl p-6 md:p-8 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div
           aria-hidden="true"
-          className="absolute top-0 right-0 w-80 h-80 bg-[radial-gradient(ellipse_at_center,_rgba(34,211,238,0.12)_0%,_transparent_75%)] pointer-events-none"
+          className="absolute top-0 right-0 w-80 h-80 bg-[radial-gradient(ellipse_at_center,_rgba(245,158,11,0.18)_0%,_transparent_75%)] pointer-events-none"
         />
 
-        <div className="space-y-3 max-w-xl">
-          <div className="p-3 bg-cyan-500/10 rounded-2xl border border-cyan-500/20 text-cyan-400 w-fit">
+        <div className="space-y-3 max-w-xl relative z-10">
+          <div className="p-3 bg-white/10 rounded-2xl border border-white/15 text-amber-300 w-fit">
             <Compass className="w-6 h-6" aria-hidden="true" />
           </div>
           <h2 className="text-2xl font-black tracking-tight text-white">
             CBT Exam Configurator
           </h2>
-          <p className="text-sm text-zinc-400 leading-relaxed">
+          <p className="text-sm text-indigo-100/80 leading-relaxed">
             Configure single subjects or complete 4-subject JAMB blocks with
             unified timing. Enter exam simulations featuring active question
             masking.
@@ -344,7 +652,7 @@ export default function Dashboard() {
 
         <Button
           onClick={() => navigate('/practice')}
-          className="bg-cyan-600 hover:bg-cyan-500 text-white font-black rounded-2xl px-8 py-6 flex items-center gap-2 text-sm shadow-xl shadow-cyan-600/15 group shrink-0"
+          className="edvenia-gold-gradient hover:brightness-105 text-amber-950 font-black rounded-2xl px-8 py-6 flex items-center gap-2 text-sm shadow-xl shadow-amber-900/20 group shrink-0 relative z-10"
         >
           Go to Practice Configurator
           <ChevronRight
@@ -354,119 +662,74 @@ export default function Dashboard() {
         </Button>
       </section>
 
-      {/* METRICS */}
-      <section
-        aria-label="Performance metrics"
-        className="grid grid-cols-1 md:grid-cols-3 gap-6"
-      >
-        <div className="p-6 bg-zinc-900/30 border border-white/5 rounded-3xl space-y-2">
-          <Award className="w-5 h-5 text-amber-500" aria-hidden="true" />
-          <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider block">
-            Readiness Level
-          </span>
-          <span className="text-3xl font-black text-white block">
-            {highScore !== null ? getReadinessLabel(highScore) : '—'}
-          </span>
-          <p className="text-[11px] text-zinc-400">
-            {highScore !== null
-              ? `Based on your ${highScore}% best mock score.`
-              : 'Complete a mock exam to see your level.'}
-          </p>
-        </div>
-
-        <div className="p-6 bg-zinc-900/30 border border-white/5 rounded-3xl space-y-2">
-          <Target className="w-5 h-5 text-rose-500" aria-hidden="true" />
-          <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider block">
-            Best Mock Score
-          </span>
-          <span className="text-3xl font-black text-cyan-400 block">
-            {highScore !== null ? `${highScore}%` : '—'}
-          </span>
-          <p
-            aria-live="polite"
-            className={`text-[11px] flex items-center gap-1 ${
-              scoreError ? 'text-rose-400' : 'text-zinc-400'
-            }`}
-          >
-            {scoreError && (
-              <AlertCircle
-                className="w-3 h-3 shrink-0"
-                aria-hidden="true"
-              />
-            )}
-            {scoreError ?? scoreFeedback}
-          </p>
-        </div>
-
-        <div className="p-6 bg-zinc-900/30 border border-white/5 rounded-3xl space-y-2">
-          <ShieldCheck
-            className="w-5 h-5 text-emerald-500"
-            aria-hidden="true"
-          />
-          <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider block">
-            Offline Access
-          </span>
-          <span className="text-3xl font-black text-emerald-400 block">
-            Active
-          </span>
-          <p className="text-[11px] text-zinc-400">
-            Practice history saved locally — no internet needed.
-          </p>
-        </div>
-      </section>
-
       {/* FEATURES */}
       <section
         aria-label="App features"
-        className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4"
+        className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4"
       >
-        <div className="p-6 bg-zinc-900/20 border border-white/5 rounded-3xl space-y-4">
+        <div className="edvenia-card rounded-3xl p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-purple-500/10 rounded-xl border border-purple-500/20 text-purple-400">
+            <div className="p-2.5 bg-indigo-100 rounded-xl text-indigo-700">
               <Brain className="w-5 h-5" aria-hidden="true" />
             </div>
-            <h3 className="font-bold text-base text-zinc-200">
+            <h3 className="font-bold text-base text-indigo-950">
               Up-to-Date Syllabus
             </h3>
           </div>
-          <p className="text-xs text-zinc-400 leading-relaxed">
+          <p className="text-xs text-indigo-900/60 leading-relaxed">
             Questions sync with official JAMB, WAEC, and NECO syllabus
             targets. Keep your sessions accurate and relevant.
           </p>
-          {/* ✅ FIX 10: Explicit type="button" to prevent accidental submits */}
           <button
             type="button"
             onClick={() => navigate('/practice')}
-            className="text-xs font-black text-purple-400 uppercase tracking-widest hover:text-purple-300 transition-colors flex items-center gap-1"
+            className="text-xs font-black text-indigo-600 uppercase tracking-widest hover:text-indigo-800 transition-colors flex items-center gap-1"
           >
             Start Practicing
             <ChevronRight className="w-3 h-3" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="p-6 bg-zinc-900/20 border border-white/5 rounded-3xl space-y-4">
+        <div className="edvenia-card rounded-3xl p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-500/10 rounded-xl border border-emerald-500/25 text-emerald-400">
+            <div className="p-2.5 bg-amber-100 rounded-xl text-amber-700">
               <MessageSquare className="w-5 h-5" aria-hidden="true" />
             </div>
-            <h3 className="font-bold text-base text-zinc-200">
+            <h3 className="font-bold text-base text-indigo-950">
               Personalized AI Tutor
             </h3>
           </div>
-          <p className="text-xs text-zinc-400 leading-relaxed">
+          <p className="text-xs text-indigo-900/60 leading-relaxed">
             Get instant step-by-step explanations after each session. Your
             AI tutor clarifies concepts and helps you tackle hard questions.
           </p>
-          {/* ✅ FIX 10: Explicit type="button" to prevent accidental submits */}
           <button
             type="button"
             onClick={() => navigate('/tutor')}
-            className="text-xs font-black text-emerald-400 uppercase tracking-widest hover:text-emerald-300 transition-colors flex items-center gap-1"
+            className="text-xs font-black text-amber-700 uppercase tracking-widest hover:text-amber-800 transition-colors flex items-center gap-1"
           >
             Ask AI Tutor
             <ChevronRight className="w-3 h-3" aria-hidden="true" />
           </button>
         </div>
+      </section>
+
+      {/* BOTTOM BANNER */}
+      <section className="edvenia-card rounded-3xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 bg-emerald-50/60">
+        <div className="flex items-center gap-3">
+          <Target className="w-6 h-6 text-emerald-600 shrink-0" aria-hidden="true" />
+          <p className="text-sm font-bold text-emerald-900">
+            Stay consistent. Practice daily. Ace WAEC, JAMB &amp; NECO! 🚀
+            <span className="block text-xs font-medium text-emerald-800/70">You're building a better future.</span>
+          </p>
+        </div>
+        <Button
+          onClick={() => navigate('/planner')}
+          className="edvenia-gradient text-white font-bold rounded-xl px-5 py-2.5 text-sm flex items-center gap-2 shrink-0"
+        >
+          Create Study Plan
+          <Target className="w-4 h-4" aria-hidden="true" />
+        </Button>
       </section>
     </div>
   );
