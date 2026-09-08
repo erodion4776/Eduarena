@@ -9,7 +9,7 @@ import {
   Save, RefreshCw, Layers, Sparkles, FileText,
   AlertTriangle, Image as ImageIcon, Calculator, LayoutGrid
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion'; // Standard student-friendly animation library
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Select, 
   SelectContent, 
@@ -23,7 +23,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from 'sonner';
 
-// Math rendering libraries (LaTeX)
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -33,7 +32,6 @@ import { supabase } from '@/src/lib/supabase';
 const EXAM_TYPES = ['JAMB', 'WAEC', 'NECO'] as const;
 const YEARS = Array.from({ length: 2026 - 1983 }, (_, i) => 2025 - i);
 
-// Starter mock data for offline development preview
 const FALLBACK_SUBJECTS = [
   { id: 'sub-1', name: 'Mathematics' },
   { id: 'sub-2', name: 'Physics' },
@@ -64,13 +62,11 @@ const FALLBACK_QUESTIONS = [
 ];
 
 export default function QuestionFactory() {
-  // --- TABS & DATA STATE ---
   const [activeTab, setActiveTab] = useState('manager');
   const [subjects, setSubjects] = useState<any[]>([]);
   const [allTopics, setAllTopics] = useState<any[]>([]);
   const [libraryQuestions, setLibraryQuestions] = useState<any[]>([]);
   
-  // --- FORM STATE ---
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedTopic, setSelectedTopic] = useState('');
   const [examType, setExamType] = useState<typeof EXAM_TYPES[number]>('JAMB');
@@ -82,26 +78,21 @@ export default function QuestionFactory() {
   const [imageURL, setImageURL] = useState('');
   const [difficulty, setDifficulty] = useState('5');
 
-  // --- EDIT STATE ---
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   
-  // --- SEARCH & PAGINATION STATE ---
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 25;
 
-  // --- LOADING STATES ---
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  // --- NEW SUBJECT / TOPIC CREATION STATE ---
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newTopicName, setNewTopicName] = useState('');
   const [targetSubjectId, setTargetSubjectId] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- FETCH DATA FROM SERVER ---
   const fetchData = async () => {
     setIsLoading(true);
     try {
@@ -119,7 +110,6 @@ export default function QuestionFactory() {
       setLibraryQuestions(Array.isArray(qData.questions) && qData.questions.length > 0 ? qData.questions : FALLBACK_QUESTIONS);
       setAllTopics(Array.isArray(topData) && topData.length > 0 ? topData : FALLBACK_TOPICS);
     } catch {
-      // Safe offline fallback
       setSubjects(FALLBACK_SUBJECTS);
       setLibraryQuestions(FALLBACK_QUESTIONS);
       setAllTopics(FALLBACK_TOPICS);
@@ -132,13 +122,11 @@ export default function QuestionFactory() {
     fetchData();
   }, []);
 
-  // Filter topics based on the chosen subject in the editor
   const filteredTopics = useMemo(() => {
     if (!selectedSubject) return [];
     return allTopics.filter((t) => t.subject_id === selectedSubject);
   }, [allTopics, selectedSubject]);
 
-  // Search filter for the question library tab
   const filteredLibrary = useMemo(() => {
     if (!searchQuery.trim()) return libraryQuestions;
     const q = searchQuery.toLowerCase();
@@ -149,7 +137,6 @@ export default function QuestionFactory() {
     );
   }, [libraryQuestions, searchQuery]);
 
-  // Pagination calculation
   const paginatedQuestions = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
     return filteredLibrary.slice(start, start + PAGE_SIZE);
@@ -163,10 +150,9 @@ export default function QuestionFactory() {
 
   const handleSubjectChange = (val: string) => {
     setSelectedSubject(val);
-    setSelectedTopic(''); // Reset topic when subject changes
+    setSelectedTopic('');
   };
 
-  // --- DIAGRAM / IMAGE UPLOAD HANDLER ---
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -200,7 +186,6 @@ export default function QuestionFactory() {
     }
   };
 
-  // --- DELETE QUESTION HANDLER ---
   const handleDeleteQuestion = async (id: string) => {
     try {
       const res = await fetch(`/api/admin/questions/${id}`, { method: 'DELETE' });
@@ -208,13 +193,11 @@ export default function QuestionFactory() {
       setLibraryQuestions((prev) => prev.filter((q) => q.id !== id));
       toast.success("Question Removed from Archive");
     } catch {
-      // Local removal for development simulation
       setLibraryQuestions((prev) => prev.filter((q) => q.id !== id));
       toast.success("Question Removed from Archive");
     }
   };
 
-  // --- EDIT QUESTION: LOAD INTO FORM ---
   const handleEditQuestion = (q: any) => {
     setEditingQuestionId(q.id);
     setExamType(q.exam_type || q.exam_body || 'JAMB');
@@ -227,11 +210,10 @@ export default function QuestionFactory() {
     setExplanation(q.explanation ?? '');
     setImageURL(q.image_url ?? '');
     setDifficulty(String(q.difficulty_level ?? 5));
-    setActiveTab('creator'); // Switch tab focus to editor
+    setActiveTab('creator');
     toast.info(`Editing Question #${String(q.id).slice(0, 6)}`);
   };
 
-  // --- SAVE / UPDATE QUESTION ---
   const handleSaveQuestion = async () => {
     if (!questionText.trim() || !selectedSubject || !selectedTopic) {
       toast.error("Missing Required Fields", {
@@ -268,7 +250,6 @@ export default function QuestionFactory() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Server error saving question');
       
-      // Reset form
       setQuestionText('');
       setOptions({ A: '', B: '', C: '', D: '', E: '' });
       setExplanation('');
@@ -278,7 +259,6 @@ export default function QuestionFactory() {
       fetchData();
       toast.success(isEdit ? "Question Updated!" : "Question Saved to Archive!");
     } catch {
-      // Local simulation fallback
       setQuestionText('');
       setOptions({ A: '', B: '', C: '', D: '', E: '' });
       setExplanation('');
@@ -290,7 +270,6 @@ export default function QuestionFactory() {
     }
   };
 
-  // --- ADD NEW SUBJECT DOMAIN ---
   const handleAddSubject = async () => {
     const cleanName = newSubjectName.trim();
     if (!cleanName) return;
@@ -312,7 +291,6 @@ export default function QuestionFactory() {
     }
   };
 
-  // --- ADD NEW TOPIC UNIT ---
   const handleAddTopic = async () => {
     const cleanName = newTopicName.trim();
     if (!cleanName || !targetSubjectId) return;
@@ -336,8 +314,6 @@ export default function QuestionFactory() {
 
   return (
     <div className="max-w-[1600px] mx-auto p-4 md:p-8 space-y-8 font-sans">
-      
-      {/* Top Header Banner */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b-2 border-slate-900">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
@@ -355,7 +331,6 @@ export default function QuestionFactory() {
           </div>
         </div>
 
-        {/* Status Counter Badge */}
         <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-2xl border border-slate-200">
           <div className="px-4 py-2 bg-white rounded-xl shadow-xs border border-slate-100 flex flex-col">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cataloged Questions</span>
@@ -371,7 +346,6 @@ export default function QuestionFactory() {
         </div>
       </div>
 
-      {/* Tabs Navigation */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
         <TabsList className="bg-transparent border-b border-slate-200 w-full justify-start rounded-none h-auto p-0 gap-8">
           <TabsTrigger 
@@ -394,11 +368,9 @@ export default function QuestionFactory() {
           </TabsTrigger>
         </TabsList>
 
-        {/* TAB 1: SUBJECTS & TOPICS MANAGER */}
+        {/* TAB 1: SUBJECTS & TOPICS */}
         <TabsContent value="manager" className="m-0 space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            
-            {/* Subject Domain Creator */}
             <Card className="border-2 border-slate-900 shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] rounded-2xl bg-white">
               <CardHeader className="border-b-2 border-slate-900 bg-slate-50 rounded-t-2xl">
                 <CardTitle className="text-base font-black uppercase tracking-tight text-slate-900">
@@ -440,7 +412,6 @@ export default function QuestionFactory() {
               </CardContent>
             </Card>
 
-            {/* Topic Mapping Creator */}
             <Card className="border-2 border-slate-900 shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] rounded-2xl bg-white">
               <CardHeader className="border-b-2 border-slate-900 bg-slate-50 rounded-t-2xl">
                 <CardTitle className="text-base font-black uppercase tracking-tight text-slate-900">
@@ -485,15 +456,12 @@ export default function QuestionFactory() {
                 </Button>
               </CardContent>
             </Card>
-
           </div>
         </TabsContent>
 
-        {/* TAB 2: QUESTION CREATOR / EDITOR */}
+        {/* TAB 2: QUESTION CREATOR */}
         <TabsContent value="creator" className="m-0 space-y-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            
-            {/* Form Input Side */}
             <Card className="border-2 border-slate-900 shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] rounded-2xl overflow-hidden bg-white">
               <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b-2 border-slate-900">
                 <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
@@ -506,8 +474,6 @@ export default function QuestionFactory() {
               </div>
 
               <CardContent className="p-6 md:p-8 space-y-6">
-                
-                {/* Active Edit Alert */}
                 {editingQuestionId && (
                   <div className="flex items-center justify-between bg-amber-50 border-2 border-amber-400 p-4 rounded-xl text-amber-900 text-xs">
                     <div className="font-bold flex items-center gap-2">
@@ -531,7 +497,6 @@ export default function QuestionFactory() {
                   </div>
                 )}
 
-                {/* Exam Metadata Selectors */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold uppercase text-slate-500">Exam Body</Label>
@@ -582,7 +547,6 @@ export default function QuestionFactory() {
                   </div>
                 </div>
 
-                {/* Question Statement Input */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-bold uppercase text-slate-800 flex items-center gap-1.5">
@@ -604,7 +568,6 @@ export default function QuestionFactory() {
                   />
                 </div>
 
-                {/* Image / Diagram Attachment */}
                 <div className="flex items-center gap-4 p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 hover:border-slate-400 transition-colors">
                   <div className="p-3 bg-white border border-slate-200 rounded-xl">
                     <ImageIcon className="w-6 h-6 text-slate-700" />
@@ -631,7 +594,6 @@ export default function QuestionFactory() {
                   </Button>
                 </div>
 
-                {/* Options List */}
                 <div className="space-y-4 pt-2">
                   <Label className="text-xs font-bold uppercase text-slate-800 flex items-center gap-1.5">
                     <Calculator className="w-3.5 h-3.5" /> Options &amp; Correct Answer Selection
@@ -658,7 +620,6 @@ export default function QuestionFactory() {
                   </RadioGroup>
                 </div>
 
-                {/* Explanation / Solution */}
                 <div className="space-y-2 pt-2">
                   <Label className="text-xs font-bold uppercase text-slate-800 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Step-by-Step Solution Breakdown
@@ -671,7 +632,6 @@ export default function QuestionFactory() {
                   />
                 </div>
 
-                {/* Action Bar */}
                 <div className="pt-4 flex flex-col md:flex-row items-center justify-between gap-6 p-4 bg-slate-50 border-2 border-slate-900 rounded-2xl">
                   <div className="flex-1 w-full space-y-1">
                     <div className="flex justify-between items-center">
@@ -697,11 +657,9 @@ export default function QuestionFactory() {
                     {editingQuestionId ? 'Update Question' : 'Save Question'}
                   </Button>
                 </div>
-
               </CardContent>
             </Card>
 
-            {/* Live Student Preview Side */}
             <div className="space-y-6">
               <Card className="border-2 border-slate-900 shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] rounded-2xl bg-white overflow-hidden">
                 <CardHeader className="border-b-2 border-slate-900 bg-slate-50 py-4 flex flex-row items-center justify-between">
@@ -714,97 +672,4 @@ export default function QuestionFactory() {
                 </CardHeader>
                 
                 <CardContent className="p-6 md:p-8 space-y-6 min-h-[450px]">
-                  {/* Badges */}
-                  <div className="flex flex-wrap gap-2">
-                    <Badge className="bg-slate-100 text-slate-900 border-none font-bold text-[10px] uppercase">
-                      {examType} {year}
-                    </Badge>
-                    <Badge className="bg-slate-100 text-slate-900 border-none font-bold text-[10px] uppercase">
-                      {subjects.find((s) => s.id === selectedSubject)?.name || 'Subject'}
-                    </Badge>
-                    <Badge className="bg-red-50 text-red-600 border-none font-bold text-[10px] uppercase">
-                      Difficulty: {difficulty}/10
-                    </Badge>
-                  </div>
-
-                  {/* Question Prompt */}
-                  <div className="text-lg font-bold text-slate-900 leading-relaxed">
-                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {questionText || "Question statement preview will appear here..."}
-                    </ReactMarkdown>
-                  </div>
-
-                  {/* Diagram Preview */}
-                  {imageURL && (
-                    <div className="max-w-xs mx-auto border-2 border-slate-900 p-2 bg-slate-50 rounded-xl">
-                      <img src={imageURL} alt="Question Diagram" className="max-h-48 mx-auto object-contain rounded-lg" />
-                    </div>
-                  )}
-
-                  {/* Options Preview */}
-                  <div className="grid grid-cols-1 gap-2.5">
-                    {(['A', 'B', 'C', 'D', 'E'] as const).map((label) => (
-                      <div 
-                        key={label}
-                        className={`flex items-center gap-3 p-3.5 rounded-xl border-2 transition-all ${
-                          correctOption === label 
-                            ? 'border-slate-900 bg-emerald-50/40 text-slate-900' 
-                            : 'border-slate-100 bg-white text-slate-600'
-                        }`}
-                      >
-                        <div className={`w-7 h-7 flex items-center justify-center font-bold text-xs rounded-lg ${
-                          correctOption === label ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {label}
-                        </div>
-                        <div className="flex-1 text-sm font-medium">
-                          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                            {options[label] || `Option ${label}`}
-                          </ReactMarkdown>
-                        </div>
-                        {correctOption === label && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Solution Preview */}
-                  {explanation && (
-                    <div className="mt-6 p-5 bg-slate-900 text-white rounded-xl border-t-2 border-red-500 space-y-2">
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-red-400">
-                        Step-by-Step Solution
-                      </h4>
-                      <div className="text-sm font-medium leading-relaxed opacity-90">
-                        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                          {explanation}
-                        </ReactMarkdown>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-          </div>
-        </TabsContent>
-
-        {/* TAB 3: QUESTION ARCHIVE LIBRARY */}
-        <TabsContent value="library" className="m-0">
-          <Card className="border-2 border-slate-900 rounded-2xl overflow-hidden shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] bg-white">
-            <CardHeader className="bg-slate-900 border-b-2 border-slate-900 py-6 text-white">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <CardTitle className="text-lg font-black uppercase italic tracking-tight text-white">
-                    Question Archive
-                  </CardTitle>
-                  <CardDescription className="text-xs text-slate-400 mt-0.5">
-                    Showing {filteredLibrary.length} of {libraryQuestions.length} records
-                  </CardDescription>
-                </div>
-
-                <div className="relative w-full md:w-72">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <Input 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search keywords, formulas..." 
-                    className="pl-9 pr-4 py-5 
+                  <div className="flex 
