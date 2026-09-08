@@ -672,4 +672,185 @@ export default function QuestionFactory() {
                 </CardHeader>
                 
                 <CardContent className="p-6 md:p-8 space-y-6 min-h-[450px]">
-                  <div className="flex 
+                  <div className="flex flex-wrap gap-2">
+                    <Badge className="bg-slate-100 text-slate-900 border-none font-bold text-[10px] uppercase">
+                      {examType} {year}
+                    </Badge>
+                    <Badge className="bg-slate-100 text-slate-900 border-none font-bold text-[10px] uppercase">
+                      {subjects.find((s) => s.id === selectedSubject)?.name || 'Subject'}
+                    </Badge>
+                    <Badge className="bg-red-50 text-red-600 border-none font-bold text-[10px] uppercase">
+                      Difficulty: {difficulty}/10
+                    </Badge>
+                  </div>
+
+                  <div className="text-lg font-bold text-slate-900 leading-relaxed">
+                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {questionText || "Question statement preview will appear here..."}
+                    </ReactMarkdown>
+                  </div>
+
+                  {imageURL && (
+                    <div className="max-w-xs mx-auto border-2 border-slate-900 p-2 bg-slate-50 rounded-xl">
+                      <img src={imageURL} alt="Question Diagram" className="max-h-48 mx-auto object-contain rounded-lg" />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {(['A', 'B', 'C', 'D', 'E'] as const).map((label) => (
+                      <div 
+                        key={label}
+                        className={`flex items-center gap-3 p-3.5 rounded-xl border-2 transition-all ${
+                          correctOption === label 
+                            ? 'border-slate-900 bg-emerald-50/40 text-slate-900' 
+                            : 'border-slate-100 bg-white text-slate-600'
+                        }`}
+                      >
+                        <div className={`w-7 h-7 flex items-center justify-center font-bold text-xs rounded-lg ${
+                          correctOption === label ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {label}
+                        </div>
+                        <div className="flex-1 text-sm font-medium">
+                          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                            {options[label] || `Option ${label}`}
+                          </ReactMarkdown>
+                        </div>
+                        {correctOption === label && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
+                      </div>
+                    ))}
+                  </div>
+
+                  {explanation && (
+                    <div className="mt-6 p-5 bg-slate-900 text-white rounded-xl border-t-2 border-red-500 space-y-2">
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-red-400">
+                        Step-by-Step Solution
+                      </h4>
+                      <div className="text-sm font-medium leading-relaxed opacity-90">
+                        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                          {explanation}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* TAB 3: QUESTION LIBRARY */}
+        <TabsContent value="library" className="m-0">
+          <Card className="border-2 border-slate-900 rounded-2xl overflow-hidden shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] bg-white">
+            <CardHeader className="bg-slate-900 border-b-2 border-slate-900 py-6 text-white">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg font-black uppercase italic tracking-tight text-white">
+                    Question Archive
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-400 mt-0.5">
+                    Showing {filteredLibrary.length} of {libraryQuestions.length} records
+                  </CardDescription>
+                </div>
+
+                <div className="relative w-full md:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Input 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search keywords, formulas..." 
+                    className="pl-9 pr-4 py-5 bg-slate-800 border-none text-white placeholder:text-slate-500 rounded-xl text-xs font-medium"
+                  />
+                </div>
+              </div>
+            </CardHeader>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b-2 border-slate-900 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-6 py-4">ID</th>
+                    <th className="px-6 py-4">Exam Body / Year</th>
+                    <th className="px-6 py-4">Subject &amp; Topic</th>
+                    <th className="px-6 py-4">Question Preview</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
+                  {paginatedQuestions.map((q) => (
+                    <tr key={q.id} className="hover:bg-slate-50/80 transition-colors group">
+                      <td className="px-6 py-4 font-mono text-xs font-bold text-slate-900">
+                        #{String(q.id).slice(0, 6)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-slate-900 text-xs">{q.exam_type || q.exam_body}</div>
+                        <div className="text-[10px] text-slate-400">{q.year}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-slate-900 text-xs">
+                          {subjects.find((s) => s.id === q.subject_id)?.name || 'General'}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {allTopics.find((t) => t.id === q.topic_id)?.name || 'General'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 max-w-md">
+                        <p className="text-xs text-slate-600 line-clamp-1 font-medium">
+                          {q.question_text || q.question_content}
+                        </p>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button 
+                            onClick={() => handleEditQuestion(q)}
+                            variant="outline" 
+                            size="icon" 
+                            className="w-8 h-8 rounded-lg border-slate-300 hover:bg-slate-900 hover:text-white"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button 
+                            onClick={() => handleDeleteQuestion(q.id)}
+                            variant="outline" 
+                            size="icon" 
+                            className="w-8 h-8 rounded-lg border-rose-200 text-rose-600 hover:bg-rose-600 hover:text-white"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t-2 border-slate-900 flex items-center justify-between text-xs">
+              <span className="font-bold text-slate-500">
+                Page {currentPage} of {totalPages}
+              </span>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => p - 1)}
+                  className="rounded-xl border-slate-300 font-bold text-xs"
+                >
+                  Previous
+                </Button>
+                <Button 
+                  variant="outline" 
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((p) => p + 1)}
+                  className="rounded-xl border-slate-300 font-bold text-xs"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
