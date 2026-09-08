@@ -1,654 +1,862 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion'; // Standard student-friendly animations library
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/src/lib/supabase';
-import { useAuthStore } from '@/src/store/useAuthStore';
-import { Progress } from '@/components/ui/progress';
-import { 
-  Trophy, 
-  Award, 
-  Zap, 
-  BookOpen, 
-  Brain, 
-  Flame, 
-  Star, 
-  Lock, 
-  Sparkles, 
-  RefreshCw, 
-  CheckCircle2, 
-  ChevronRight,
-  TrendingUp,
-  Info,
-  BadgeAlert,
-  HelpCircle
+import {
+  Brain, Send, BookOpen, Zap,
+  GraduationCap, Lightbulb, Sparkles,
+  AlertCircle, Trash2, Copy, Check,
+  History, RefreshCw, ChevronDown, WifiOff
 } from 'lucide-react';
+import { useAuthStore } from '../store/useAuthStore';
+import { toast } from 'sonner';
 
-interface Achievement {
+// ─────────────────────────────────────────────
+// Type Definitions
+// ─────────────────────────────────────────────
+interface Message {
   id: string;
-  title: string;
-  description: string;
-  category: 'Academic' | 'AI Learning' | 'Consistency' | 'Performance';
-  xp_reward: number;
-  isUnlocked?: boolean;
-  progress?: number;
-  unlocked_at?: string | null;
+  role: 'user' | 'ai';
+  content: string;
+  source?: string;
+  isError?: boolean;
+  timestamp: number;
 }
 
-export default function Achievements() {
-  const { user, setUser } = useAuthStore();
-  const [achievements, setAchievements] = useState<Achievement[]>([]);
-  const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  
-  // AI Coach Insights
-  const [aiInsight, setAiInsight] = useState<string>('');
-  const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
+interface SyllabusTopic {
+  label: string;
+  query: string;
+  subject: string;
+}
 
-  // Fallback default achievements list matching sql/init.sql seed
-  const defaultAchievements: Achievement[] = [
-    { id: 'ac-1', title: 'First Exam Completed', description: 'Complete your very first practice CBT test.', category: 'Academic', xp_reward: 100 },
-    { id: 'ac-2', title: 'Perfect Score Master', description: 'Get a flawless 100% score on any topic test.', category: 'Academic', xp_reward: 300 },
-    { id: 'ac-3', title: 'Curious Mind', description: 'Inquire with the AI Tutor 10 times during practice.', category: 'AI Learning', xp_reward: 150 },
-    { id: 'ac-4', title: 'Consistency King', description: 'Maintain a study streak of 7 active days.', category: 'Consistency', xp_reward: 250 },
-    { id: 'ac-5', title: 'Speed Solver Champion', description: 'Complete a full WAEC or JAMB exam under 30 minutes.', category: 'Performance', xp_reward: 200 },
-    { id: 'ac-6', title: 'Subject Champion', description: 'Pass tests of 5 different subjects.', category: 'Academic', xp_reward: 250 }
-  ];
+interface AITutorResponse {
+  response: string;
+  source?: string;
+  session_id?: string;
+}
 
-  // Map category to styles/colors
-  const categoryMeta: Record<string, { color: string; bg: string; border: string; icon: any }> = {
-    'Academic': { color: 'text-cyan-400', bg: 'bg-cyan-950/40', border: 'border-cyan-500/20', icon: Award },
-    'AI Learning': { color: 'text-purple-400', bg: 'bg-purple-950/40', border: 'border-purple-500/20', icon: Brain },
-    'Consistency': { color: 'text-orange-400', bg: 'bg-orange-950/40', border: 'border-orange-500/20', icon: Flame },
-    'Performance': { color: 'text-rose-400', bg: 'bg-rose-950/40', border: 'border-rose-500/20', icon: Zap }
-  };
+interface HistoryMessage {
+  role: string;
+  content: string;
+  created_at: string;
+  metadata?: { source?: string };
+}
 
-  const getCategoryMeta = (cat: string) => {
-    return categoryMeta[cat] || { color: 'text-zinc-400', bg: 'bg-zinc-900', border: 'border-white/5', icon: Trophy };
-  };
+// ─────────────────────────────────────────────
+// Configuration Constants
+// ─────────────────────────────────────────────
+const MAX_HISTORY_CONTEXT = 6;
+const SESSION_KEY = 'tutor_chuks_session_id';
+const REQUEST_TIMEOUT_MS = 20_000; // 20-second timeout
 
-  // Fetch Achievements from database or fallback to presets
-  const fetchAchievementsData = async () => {
-    setIsSyncing(true);
-    try {
-      let dbAchievements: Achievement[] = [];
-      let dbUnlockedIds: string[] = [];
+let _msgCounter = 0;
+function newMsgId(): string {
+  return `msg_${Date.now()}_${++_msgCounter}`;
+}
 
-      // 1. Fetch available achievements
-      if (supabase) {
-        try {
-          const { data, error } = await supabase.from('achievements').select('*');
-          if (!error && data && data.length > 0) {
-            dbAchievements = data as Achievement[];
-          }
-        } catch (dbErr) {
-          console.warn('Direct Achievements select failed:', dbErr);
-        }
-      }
+let _cachedSessionId: string | null = null;
 
-      // If db is empty/unavailable, use defaults
-      if (dbAchievements.length === 0) {
-        dbAchievements = [...defaultAchievements];
-      }
+function getOrCreateSessionId(): string {
+  if (_cachedSessionId) return _cachedSessionId;
 
-      // 2. Fetch user's unlocked milestones
-      if (supabase && user && user.id && user.id !== '1') {
-        try {
-          const { data: unlocked, error: unlockedErr } = await supabase
-            .from('user_achievements')
-            .select('achievement_id, progress')
-            .eq('user_id', user.id);
+  let sessionId = localStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    localStorage.setItem(SESSION_KEY, sessionId);
+  }
 
-          if (!unlockedErr && unlocked) {
-            dbUnlockedIds = unlocked.map((u: any) => u.achievement_id);
-          }
-        } catch (sbUnlockedErr) {
-          console.warn('Failed to retrieve user unlocked achievements:', sbUnlockedErr);
-        }
-      }
+  _cachedSessionId = sessionId;
+  return sessionId;
+}
 
-      setUnlockedIds(dbUnlockedIds);
-      
-      // Merge status flags
-      const merged = dbAchievements.map(ach => {
-        const isUnlocked = dbUnlockedIds.includes(ach.id);
-        return {
-          ...ach,
-          isUnlocked,
-          progress: isUnlocked ? 100 : 0
-        };
-      });
+function rotateSessionId(): string {
+  const newId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  localStorage.setItem(SESSION_KEY, newId);
+  _cachedSessionId = newId;
+  return newId;
+}
 
-      setAchievements(merged);
-    } catch (globalErr) {
-      console.error('Unified achievements query error:', globalErr);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+// Timeout fetch wrapper to avoid hanging queries
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeout: number = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
 
-  // Run on mount or when user changes
-  useEffect(() => {
-    fetchAchievementsData();
-  }, [user]);
-
-  // Dynamically Filtered Achievements
-  const filteredAchievements = useMemo(() => {
-    return achievements.filter(ach => {
-      const matchStatus = statusFilter === 'all' 
-        ? true 
-        : statusFilter === 'unlocked' 
-          ? ach.isUnlocked 
-          : !ach.isUnlocked;
-
-      const matchCategory = categoryFilter === 'all' 
-        ? true 
-        : ach.category === categoryFilter;
-
-      return matchStatus && matchCategory;
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
     });
-  }, [achievements, statusFilter, categoryFilter]);
+    return response;
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw new Error('Connection timed out. Please try asking your question again.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-  // Aggregate values
-  const totalCount = achievements.length || 6;
-  const unlockedCount = achievements.filter(a => a.isUnlocked).length;
-  const completionPercentage = Math.round((unlockedCount / totalCount) * 100) || 0;
-  
-  const totalXpGained = useMemo(() => {
-    return achievements
-      .filter(a => a.isUnlocked)
-      .reduce((sum, current) => sum + current.xp_reward, 0);
-  }, [achievements]);
+function getAuthHeaders(): Record<string, string> {
+  const token =
+    localStorage.getItem('auth_token') ||
+    localStorage.getItem('supabase_token') ||
+    sessionStorage.getItem('auth_token');
 
-  // Fetch AI Coaching Insight on milestones
-  const fetchAchievementsAIInsight = async () => {
-    setIsAiLoading(true);
-    setAiInsight('');
-    try {
-      const unlockedList = achievements.filter(a => a.isUnlocked).map(a => a.title);
-      const lockedList = achievements.filter(a => !a.isUnlocked).map(a => a.title);
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
 
-      const response = await fetch('/.netlify/functions/achievements-insight', {
+// ─────────────────────────────────────────────
+// Client AI Caller with Local Fallback Engine
+// ─────────────────────────────────────────────
+async function callAITutor(
+  message: string,
+  history: { role: 'user' | 'ai'; content: string }[],
+  subject?: string,
+  userId?: string
+): Promise<AITutorResponse> {
+  const sessionId = getOrCreateSessionId();
+
+  const trimmedHistory = history
+    .slice(-MAX_HISTORY_CONTEXT)
+    .map(m => ({
+      sender: m.role === 'user' ? 'student' : 'tutor',
+      text: m.content,
+    }));
+
+  const payload = {
+    message,
+    history: trimmedHistory,
+    subject: subject ?? null,
+    context: 'exam_prep',
+    session_id: sessionId,
+    user_id: userId ?? null,
+  };
+
+  try {
+    const res = await fetchWithTimeout(
+      '/.netlify/functions/ai-tutor',
+      {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          unlockedCount,
-          totalCount,
-          totalXp: user?.points ?? 1200,
-          unlockedList,
-          lockedList
-        })
-      });
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload),
+      }
+    );
 
-      if (response.ok) {
-        const body = await response.json();
-        if (body.insight) {
-          setAiInsight(body.insight);
-          setIsAiLoading(false);
-          return;
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.response && typeof data.response === 'string') {
+        if (data.session_id && data.session_id !== sessionId) {
+          localStorage.setItem(SESSION_KEY, data.session_id);
+          _cachedSessionId = data.session_id;
         }
-      }
-    } catch (err) {
-      console.warn('AI achievements analyst failed, using heuristic fallback:', err);
-    }
 
-    // Heuristic Fallback
-    setTimeout(() => {
-      let advice = '';
-      if (unlockedCount === 0) {
-        advice = `👋 **Let's kickstart your academic milestone track!** Complete your first practice test in the Exam Arena to unlock **First Exam Completed** and gain your first 100 XP bonus.`;
-      } else if (unlockedCount === totalCount) {
-        advice = `👑 **Ultimate Achievement Unlocked!** You have fully cleared all academic milestones and conquered the leaderboard metrics. Continue taking custom practice quizzes to sustain your dominance.`;
-      } else {
-        const nextTarget = achievements.find(a => !a.isUnlocked);
-        advice = `⚡ **Spectacular learning momentum!** You have conquered ${unlockedCount} out of ${totalCount} milestones. Focus on unlocking the **${nextTarget?.title ?? 'Perfect Score Master'}** badge next to secure an instant boost of +${nextTarget?.xp_reward ?? 250} XP.`;
+        return {
+          response: data.response,
+          source: data.source ?? 'WAEC / JAMB Syllabus Guide',
+          session_id: data.session_id,
+        };
       }
-      setAiInsight(advice);
-      setIsAiLoading(false);
-    }, 1200);
+    }
+  } catch {
+    // Falls through to fallback handler below
+  }
+
+  // Fallback response for offline or local preview environments
+  return {
+    response: `Great question on **${subject || 'this concept'}**! 🎓\n\nWhen studying this for WAEC & JAMB, always remember:\n1. Review the foundational formulas and definitions.\n2. Eliminate unlikely options when solving multiple-choice questions.\n3. Practice at least two related past questions on this topic to solidify your understanding.\n\nKeep up the great study momentum!`,
+    source: 'Recommended Coursebook Review',
+    session_id: sessionId
   };
+}
 
-  // Trigger AI advice when active milestones state alters
-  useEffect(() => {
-    if (achievements.length > 0) {
-      fetchAchievementsAIInsight();
+// Load historical messages from the session
+async function loadChatHistory(sessionId: string): Promise<Message[]> {
+  try {
+    const response = await fetchWithTimeout(
+      `/.netlify/functions/chat-history?session_id=${encodeURIComponent(sessionId)}&limit=20`,
+      { headers: getAuthHeaders() }
+    );
+
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    if (!Array.isArray(data?.history) || data.history.length === 0) return [];
+
+    return data.history
+      .filter((msg: HistoryMessage) => msg?.role && msg?.content)
+      .map((msg: HistoryMessage) => ({
+        id: newMsgId(),
+        role: msg.role === 'user' ? 'user' : 'ai',
+        content: msg.content,
+        source: msg.metadata?.source,
+        timestamp: msg.created_at ? new Date(msg.created_at).getTime() : Date.now(),
+      })) as Message[];
+
+  } catch {
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────
+// High-Yield Syllabus Topics
+// ─────────────────────────────────────────────
+const SYLLABUS_TOPICS: SyllabusTopic[] = [
+  {
+    label: 'Cell & Organization of Life',
+    subject: 'Biology',
+    query: 'Explain the organization of life from cell to tissue, organ, and organ system with examples.',
+  },
+  {
+    label: 'Law of Diminishing Returns',
+    subject: 'Economics',
+    query: 'What is the law of diminishing marginal utility and how does it relate to consumer equilibrium?',
+  },
+  {
+    label: 'West African Agriculture Problems',
+    subject: 'Agriculture',
+    query: 'Discuss the major problems of agricultural development in West Africa and possible solutions.',
+  },
+  {
+    label: 'African Poetry — Vanity',
+    subject: 'Literature',
+    query: "Analyze the themes in Birago Diop's poem 'Vanity' — what does it say about African tradition?",
+  },
+  {
+    label: 'Quadratic Equations',
+    subject: 'Mathematics',
+    query: 'Explain how to solve quadratic equations by factorization and completing the square with examples.',
+  },
+  {
+    label: 'Electricity & Magnetism',
+    subject: 'Physics',
+    query: "Explain the relationship between electricity and magnetism including Faraday's law of induction.",
+  },
+  {
+    label: 'Organic Chemistry — Hydrocarbons',
+    subject: 'Chemistry',
+    query: 'What are hydrocarbons? Explain alkanes, alkenes, and alkynes with their properties and uses.',
+  },
+  {
+    label: 'Nigerian Constitution & Government',
+    subject: 'Government',
+    query: 'Explain the key features of the Nigerian Constitution and the three arms of government.',
+  },
+];
+
+const QUICK_ACTIONS = [
+  {
+    label: 'Generate Practice Questions',
+    icon: Zap,
+    color: 'text-amber-400',
+    bg: 'bg-amber-500/10',
+    query: 'Generate 5 JAMB-style practice questions on the topic we just discussed.',
+  },
+  {
+    label: 'Step-by-Step Solver',
+    icon: GraduationCap,
+    color: 'text-cyan-400',
+    bg: 'bg-cyan-500/10',
+    query: 'Give me a step-by-step breakdown of the last concept you explained.',
+  },
+  {
+    label: 'Give Me a Hint',
+    icon: Lightbulb,
+    color: 'text-emerald-400',
+    bg: 'bg-emerald-500/10',
+    query: 'Give me a helpful hint or memory trick for remembering this topic.',
+  },
+];
+
+const SUBJECT_COLORS: Record<string, string> = {
+  Biology: 'text-emerald-400 bg-emerald-950/50 border-emerald-500/30',
+  Economics: 'text-amber-400 bg-amber-950/50 border-amber-500/30',
+  Mathematics: 'text-blue-400 bg-blue-950/50 border-blue-500/30',
+  Physics: 'text-cyan-400 bg-cyan-950/50 border-cyan-500/20',
+  Chemistry: 'text-purple-400 bg-purple-950/50 border-purple-500/30',
+  Government: 'text-rose-400 bg-rose-950/50 border-rose-500/30',
+  Literature: 'text-orange-400 bg-orange-950/50 border-orange-500/30',
+  Agriculture: 'text-lime-400 bg-lime-950/50 border-lime-500/30',
+};
+
+const WELCOME_MESSAGE: Message = {
+  id: 'initial_ai_msg',
+  role: 'ai',
+  content: "Hello! I am Tutor Chuks, your AI-powered exam prep assistant 🎓\n\nI can help you master WAEC, JAMB, and NECO topics using verified past questions and study materials.\n\nAsk me anything or pick a high-yield topic from the panel to get started!",
+  timestamp: Date.now(),
+};
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      toast.success('Copied to clipboard!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Failed to copy text.');
     }
-  }, [unlockedCount, achievements.length]);
-
-  // Simulates unlocking a specific locked achievement inside Postgres live
-  const handleSimulateUnlock = async (achievementId: string, rewardXp: number) => {
-    if (!user) return;
-    setIsSyncing(true);
-
-    const nextPoints = (user.points || 0) + rewardXp;
-
-    if (supabase && user.id && user.id !== '1') {
-      try {
-        // 1. Insert/Upsert user_achievements record
-        await supabase
-          .from('user_achievements')
-          .upsert({
-            user_id: user.id,
-            achievement_id: achievementId,
-            progress: 100,
-            unlocked_at: new Date().toISOString()
-          }, { onConflict: 'user_id,achievement_id' });
-
-        // 2. Refresh points on user/profiles
-        let profileTable = 'user_profiles';
-        const { error: testErr } = await supabase.from('user_profiles').select('id').limit(1);
-        if (testErr) profileTable = 'users';
-
-        if (profileTable === 'user_profiles') {
-          await supabase
-            .from('user_profiles')
-            .upsert({
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              points: nextPoints,
-              level: Math.floor(nextPoints / 400) + 1,
-              updated_at: new Date().toISOString()
-            });
-        } else {
-          await supabase
-            .from('users')
-            .update({ points: nextPoints })
-            .eq('id', user.id);
-        }
-      } catch (err) {
-        console.warn('Failed to record achievement to database:', err);
-      }
-    }
-
-    // Sync to store state
-    setUser({
-      ...user,
-      points: nextPoints,
-      level: Math.floor(nextPoints / 400) + 1
-    });
-
-    // Reload list
-    await fetchAchievementsData();
   };
 
   return (
-    <div className="p-4 sm:p-8 space-y-8 bg-zinc-950 text-white min-h-screen font-sans">
-      
-      {/* Header section with live sync */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-6">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
-            <h1 className="text-3xl font-black uppercase tracking-tight">Academic Milestones</h1>
-          </div>
-          <p className="text-zinc-400 text-sm flex items-center gap-1.5 flex-wrap">
-            {user ? (
-              <>
-                <Award className="w-4 h-4 text-cyan-400" />
-                Competency rewards tracker active for student <span className="text-zinc-200 font-bold">{user.name}</span>
-                <span className="text-emerald-400 font-bold bg-emerald-950/50 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px]">
-                  Supabase Persistent Sync
-                </span>
-              </>
-            ) : (
-              <>
-                <Info className="w-4 h-4 text-amber-500" />
-                Guest mode — sign in to save your milestone progress!
-              </>
-            )}
-          </p>
-        </div>
+    <button
+      onClick={handleCopy}
+      className="p-1 rounded-lg hover:bg-white/5 text-zinc-600 hover:text-zinc-400 transition-colors cursor-pointer"
+      title="Copy message"
+    >
+      {copied ? (
+        <Check className="w-3.5 h-3.5 text-emerald-400" />
+      ) : (
+        <Copy className="w-3.5 h-3.5" />
+      )}
+    </button>
+  );
+}
 
-        <div className="flex items-center gap-2.5">
-          <Button 
-            variant="outline" 
-            onClick={fetchAchievementsData}
-            disabled={isSyncing}
-            className="rounded-xl border-white/10 bg-zinc-900/60 hover:bg-zinc-900 hover:border-white/20 text-zinc-300 gap-2 h-10 text-xs font-bold"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            Sync Progress
-          </Button>
-        </div>
-      </div>
+function OfflineBanner() {
+  const [offline, setOffline] = useState(!navigator.onLine);
 
-      {/* Hero Achievement metrics summary card */}
-      <Card className="bg-gradient-to-r from-zinc-900 via-zinc-950 to-purple-950/60 border border-purple-500/10 p-6 sm:p-8 rounded-3xl relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl -z-10" />
-        <div className="absolute bottom-0 left-1/4 w-60 h-60 bg-cyan-500/5 rounded-full blur-3xl -z-10" />
+  useEffect(() => {
+    const goOffline = () => setOffline(true);
+    const goOnline = () => setOffline(false);
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
+  }, []);
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          
-          {/* Unlocked Stats & Progress Bar */}
-          <div className="lg:col-span-7 space-y-4">
-            <h2 className="text-zinc-500 text-xs font-black uppercase tracking-widest flex items-center gap-1.5">
-              <Trophy className="w-3.5 h-3.5 text-yellow-400" /> Competency Completion Status
-            </h2>
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-baseline">
-                <p className="text-4xl sm:text-5xl font-black tracking-tight text-white">
-                  {unlockedCount} <span className="text-zinc-500 text-2xl font-bold">/ {totalCount}</span>
-                </p>
-                <p className="text-cyan-400 font-extrabold text-sm">{completionPercentage}% Unlocked</p>
-              </div>
-              <div className="w-full bg-zinc-950 border border-white/5 h-2.5 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-cyan-500 via-purple-500 to-teal-400 rounded-full transition-all duration-700"
-                  style={{ width: `${completionPercentage}%` }}
-                />
-              </div>
-            </div>
-            <p className="text-zinc-400 text-xs font-medium">
-              You have secured <span className="text-cyan-400 font-bold">+{totalXpGained} XP</span> in milestone reward bonuses. Earn more by finishing WAEC syllabus goals!
-            </p>
-          </div>
+  if (!offline) return null;
 
-          {/* Core Info Badges Grid */}
-          <div className="lg:col-span-5 grid grid-cols-3 gap-3 sm:gap-4">
-            <div className="text-center p-3.5 bg-zinc-900/40 border border-white/5 rounded-2xl shadow-md">
-              <Flame className="w-7 h-7 text-orange-400 mx-auto mb-1" />
-              <p className="font-black text-lg text-zinc-100">12 Days</p>
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Study Streak</p>
-            </div>
-            <div className="text-center p-3.5 bg-zinc-900/40 border border-white/5 rounded-2xl shadow-md">
-              <Award className="w-7 h-7 text-yellow-400 mx-auto mb-1" />
-              <p className="font-black text-lg text-zinc-100">Level {user?.level ?? 5}</p>
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Current Tier</p>
-            </div>
-            <div className="text-center p-3.5 bg-zinc-900/40 border border-white/5 rounded-2xl shadow-md animate-pulse">
-              <Sparkles className="w-7 h-7 text-cyan-400 mx-auto mb-1" />
-              <p className="font-black text-lg text-zinc-100">{user?.points ?? 1200}</p>
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Total XP</p>
-            </div>
-          </div>
+  return (
+    <div className="flex items-center gap-2 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2 mb-3">
+      <WifiOff className="w-3.5 h-3.5 shrink-0" />
+      You are currently working offline. Check your network connection.
+    </div>
+  );
+}
 
-        </div>
-      </Card>
+function MessageBubble({ msg }: { msg: Message }) {
+  return (
+    <motion.div
+      key={msg.id}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+    >
+      <div className="flex flex-col max-w-[85%] space-y-1.5">
+        <p className={`text-[10px] font-bold uppercase tracking-wider px-1 ${
+          msg.role === 'user' ? 'text-right text-zinc-500' : 'text-left text-cyan-500'
+        }`}>
+          {msg.role === 'user' ? 'You' : 'Tutor Chuks'}
+        </p>
 
-      {/* Interactive Status & Category Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
-        
-        {/* Status Filters */}
-        <div className="flex bg-zinc-900/85 p-1 rounded-xl border border-white/5 w-fit">
-          <button
-            onClick={() => setStatusFilter('all')}
-            className={`px-3.5 py-2 text-xs font-bold uppercase tracking-wide rounded-lg transition-all ${
-              statusFilter === 'all' ? 'bg-cyan-500 text-black shadow-md' : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            All Badges
-          </button>
-          <button
-            onClick={() => setStatusFilter('unlocked')}
-            className={`px-3.5 py-2 text-xs font-bold uppercase tracking-wide rounded-lg transition-all ${
-              statusFilter === 'unlocked' ? 'bg-cyan-500 text-black shadow-md' : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            Unlocked
-          </button>
-          <button
-            onClick={() => setStatusFilter('locked')}
-            className={`px-3.5 py-2 text-xs font-bold uppercase tracking-wide rounded-lg transition-all ${
-              statusFilter === 'locked' ? 'bg-cyan-500 text-black shadow-md' : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            Locked
-          </button>
-        </div>
-
-        {/* Category Filter Chips */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 mr-1">Category:</span>
-          {['all', 'Academic', 'AI Learning', 'Consistency', 'Performance'].map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setCategoryFilter(cat)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                categoryFilter === cat 
-                  ? 'bg-zinc-800 border-cyan-500/30 text-cyan-400' 
-                  : 'bg-zinc-900/50 border-white/5 text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              {cat === 'all' ? 'Show All' : cat}
-            </button>
-          ))}
-        </div>
-
-      </div>
-
-      {/* Main Grid View */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
-        
-        {/* Left Column: Milestones Showcase List (8 Span) */}
-        <div className="lg:col-span-8 space-y-6">
-          {filteredAchievements.length === 0 ? (
-            <div className="p-16 border border-dashed border-white/5 rounded-3xl flex flex-col items-center justify-center text-center text-zinc-500 gap-3">
-              <BadgeAlert className="w-10 h-10 text-zinc-600 animate-bounce" />
-              <div>
-                <p className="text-sm font-bold text-zinc-300">No Milestones Found</p>
-                <p className="text-xs text-zinc-500 mt-1">Adjust your filters to display matching academic badges</p>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <AnimatePresence mode="popLayout">
-                {filteredAchievements.map((ach, idx) => {
-                  const meta = getCategoryMeta(ach.category);
-                  const IconComp = meta.icon;
-
-                  return (
-                    <motion.div
-                      key={ach.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <Card className={`relative overflow-hidden bg-zinc-900/40 border transition-all duration-300 rounded-3xl p-6 group ${
-                        ach.isUnlocked 
-                          ? 'border-cyan-500/20 shadow-cyan-950/5' 
-                          : 'border-white/5 hover:border-white/10 opacity-70'
-                      }`}>
-                        {/* Status absolute top marker */}
-                        <div className="absolute top-4 right-4 flex items-center gap-1.5">
-                          {ach.isUnlocked ? (
-                            <span className="flex items-center gap-1 text-[9px] font-black uppercase text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-                              <CheckCircle2 className="w-3 h-3" /> Unlocked
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1 text-[9px] font-black uppercase text-zinc-500 bg-zinc-950 border border-white/5 px-2.5 py-0.5 rounded-full">
-                              <Lock className="w-3 h-3" /> Locked
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Category Badge Icon and Meta */}
-                        <div className="flex gap-4">
-                          <div className={`p-3 rounded-2xl h-12 w-12 flex items-center justify-center border shrink-0 ${meta.bg} ${meta.border} ${meta.color}`}>
-                            <IconComp className="w-6 h-6" />
-                          </div>
-
-                          <div className="space-y-1 pr-16">
-                            <span className={`text-[9px] font-black uppercase tracking-wider ${meta.color}`}>
-                              {ach.category}
-                            </span>
-                            <h4 className="font-extrabold text-base text-zinc-100 group-hover:text-cyan-400 transition-colors">
-                              {ach.title}
-                            </h4>
-                          </div>
-                        </div>
-
-                        {/* Description */}
-                        <p className="text-xs text-zinc-400 mt-4 leading-relaxed font-medium">
-                          {ach.description}
-                        </p>
-
-                        {/* Progress Bar indicator */}
-                        <div className="mt-6 space-y-1.5">
-                          <div className="flex justify-between items-baseline text-[10px] font-bold">
-                            <span className="text-zinc-500 uppercase">Milestone Progress</span>
-                            <span className={ach.isUnlocked ? 'text-emerald-400' : 'text-zinc-400'}>
-                              {ach.isUnlocked ? '100%' : '0%'}
-                            </span>
-                          </div>
-                          <div className="w-full bg-zinc-950 border border-white/5 h-1.5 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full rounded-full transition-all duration-500 ${
-                                ach.isUnlocked ? 'bg-emerald-400' : 'bg-zinc-800'
-                              }`} 
-                              style={{ width: ach.isUnlocked ? '100%' : '0%' }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Reward XP block and simulation trigger */}
-                        <div className="mt-5 pt-4 border-t border-white/5 flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-1 bg-zinc-950 border border-white/5 px-3 py-1 rounded-full">
-                            <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400 animate-pulse" />
-                            <span className="font-mono text-xs font-black text-cyan-400">+{ach.xp_reward} XP Reward</span>
-                          </div>
-
-                          {/* Quick simulate complete button if logged in and locked */}
-                          {!ach.isUnlocked && user && (
-                            <Button
-                              onClick={() => handleSimulateUnlock(ach.id, ach.xp_reward)}
-                              disabled={isSyncing}
-                              size="sm"
-                              className="rounded-xl bg-zinc-800 hover:bg-cyan-500 hover:text-black border border-white/5 text-[10px] font-black uppercase h-8 transition-all px-3"
-                            >
-                              Simulate Earn
-                            </Button>
-                          )}
-                        </div>
-                      </Card>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
+        <div className={`p-4 rounded-2xl text-sm leading-relaxed ${
+          msg.role === 'user'
+            ? 'bg-cyan-600 text-white rounded-tr-none'
+            : msg.isError
+              ? 'bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded-tl-none'
+              : 'bg-zinc-900/80 border border-white/5 text-zinc-200 rounded-tl-none font-medium'
+        }`}>
+          {msg.isError && (
+            <div className="flex items-center gap-2 mb-2 text-rose-400 text-xs font-bold">
+              <AlertCircle className="w-3.5 h-3.5" />
+              Tutor Notice
             </div>
           )}
+          <p className="whitespace-pre-wrap">{msg.content}</p>
         </div>
 
-        {/* Right Column: AI Competitor Insight & Level Ladder (4 Span) */}
-        <div className="lg:col-span-4 space-y-8">
-          
-          {/* AI Coach Milestones Strategic Insight Card */}
-          <Card className="bg-gradient-to-br from-purple-950/20 to-indigo-950/20 border-purple-500/20 rounded-3xl relative overflow-hidden shadow-xl p-6 flex flex-col justify-between h-fit min-h-[300px]">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl" />
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-purple-950/50 border border-purple-500/30 rounded-xl">
-                    <Brain className="w-5 h-5 text-purple-400" />
-                  </div>
-                  <h3 className="font-black text-sm uppercase tracking-wider text-purple-100">AI Competency Coach</h3>
-                </div>
-                <Button 
-                  onClick={fetchAchievementsAIInsight}
-                  disabled={isAiLoading}
-                  size="icon"
-                  variant="ghost"
-                  className="rounded-lg h-8 w-8 hover:bg-purple-950/40 text-purple-300"
-                  title="Recalculate study milestones suggestion"
-                >
-                  <Sparkles className={`w-4 h-4 ${isAiLoading ? 'animate-pulse text-purple-400' : ''}`} />
-                </Button>
+        <div className="flex items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-2">
+            {msg.source && (
+              <div className="flex items-center gap-1.5 text-[10px] text-emerald-300 font-bold bg-emerald-950/50 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+                <BookOpen className="w-3 h-3 text-emerald-400" />
+                {msg.source}
               </div>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-zinc-600 font-mono">
+              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            {msg.role === 'ai' && !msg.isError && (
+              <CopyButton text={msg.content} />
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
-              {isAiLoading ? (
-                <div className="space-y-3 py-6">
-                  <div className="h-4 bg-purple-950/40 rounded-md animate-pulse w-3/4" />
-                  <div className="h-4 bg-purple-950/40 rounded-md animate-pulse w-full" />
-                  <div className="h-4 bg-purple-950/40 rounded-md animate-pulse w-5/6" />
-                  <div className="flex items-center gap-2 text-xs text-purple-300 mt-2 font-bold animate-pulse">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Assessing performance logs...
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-300 leading-relaxed font-medium" dangerouslySetInnerHTML={{
-                  __html: aiInsight
-                    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-black">$1</strong>')
-                    .replace(/\*(.*?)\*/g, '<em class="text-purple-300 font-bold">$1</em>')
-                }} />
-              )}
+// ─────────────────────────────────────────────
+// Main Component
+// ─────────────────────────────────────────────
+export default function AITutor() {
+  const { user } = useAuthStore();
+
+  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeSubject, setActiveSubject] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<Message[]>([WELCOME_MESSAGE]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: smooth ? 'smooth' : 'auto',
+    });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading, scrollToBottom]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollBtn(distFromBottom > 200);
+  }, []);
+
+  // Sync historical messages on session start
+  useEffect(() => {
+    if (!user || historyLoaded || isLoadingHistory) return;
+
+    const sessionId = localStorage.getItem(SESSION_KEY);
+    if (!sessionId) {
+      setHistoryLoaded(true);
+      return;
+    }
+
+    setIsLoadingHistory(true);
+
+    loadChatHistory(sessionId).then((history) => {
+      if (history.length > 0) {
+        setMessages([
+          {
+            ...WELCOME_MESSAGE,
+            content: "Welcome back! Let's continue reviewing your syllabus topics and practice questions.",
+            timestamp: Date.now() - 1000,
+          },
+          ...history,
+        ]);
+        toast.success(`Loaded your last ${history.length} study messages!`);
+      }
+    }).finally(() => {
+      setHistoryLoaded(true);
+      setIsLoadingHistory(false);
+    });
+  }, [user, historyLoaded, isLoadingHistory]);
+
+  const sendMessage = useCallback(async (text: string, subject?: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || isLoading) return;
+
+    if (!user) {
+      toast.error('Please log in to chat with Tutor Chuks.');
+      return;
+    }
+
+    const userMsg: Message = {
+      id: newMsgId(),
+      role: 'user',
+      content: trimmed,
+      timestamp: Date.now(),
+    };
+
+    const historySnapshot = messagesRef.current.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    setMessages((prev) => [...prev, userMsg]);
+    setInput('');
+    setIsLoading(true);
+    setTimeout(() => inputRef.current?.focus(), 20);
+
+    try {
+      const result = await callAITutor(
+        trimmed,
+        historySnapshot,
+        subject ?? activeSubject ?? undefined,
+        user.id
+      );
+
+      setMessages((prev) => [...prev, {
+        id: newMsgId(),
+        role: 'ai',
+        content: result.response,
+        source: result.source,
+        timestamp: Date.now(),
+      }]);
+    } catch (err: any) {
+      const errorText = err?.message || 'Please ask your question one more time.';
+
+      setMessages((prev) => [...prev, {
+        id: newMsgId(),
+        role: 'ai',
+        content: `Tutor Chuks had a quick connection pause.\n\n${errorText}`,
+        isError: true,
+        timestamp: Date.now(),
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoading, user, activeSubject]);
+
+  const clearConversation = useCallback(async () => {
+    const sessionId = localStorage.getItem(SESSION_KEY);
+    if (sessionId) {
+      try {
+        await fetchWithTimeout(
+          `/.netlify/functions/chat-history?session_id=${encodeURIComponent(sessionId)}`,
+          { method: 'DELETE', headers: getAuthHeaders() }
+        );
+      } catch {
+        // Safe silent fallback
+      }
+      rotateSessionId();
+    }
+
+    const freshWelcome: Message = {
+      id: newMsgId(),
+      role: 'ai',
+      content: 'Study room cleared! Ready for a fresh study session. What concept should we break down today? 📚',
+      timestamp: Date.now(),
+    };
+
+    setMessages([freshWelcome]);
+    setShowClearConfirm(false);
+    setActiveSubject(null);
+    setHistoryLoaded(false);
+    setTimeout(() => inputRef.current?.focus(), 20);
+    toast.success('Study room cleared!');
+  }, []);
+
+  const handleTopicClick = useCallback((topic: SyllabusTopic) => {
+    setActiveSubject(topic.subject);
+    sendMessage(topic.query, topic.subject);
+  }, [sendMessage]);
+
+  const retryLastMessage = useCallback(() => {
+    const msgs = messagesRef.current;
+    const lastUserMsg = [...msgs].reverse().find((m) => m.role === 'user');
+    if (!lastUserMsg) return;
+
+    setMessages((prev) =>
+      prev.filter((m) => !(m.isError === true && m.timestamp > lastUserMsg.timestamp))
+    );
+
+    setTimeout(() => sendMessage(lastUserMsg.content), 50);
+  }, [sendMessage]);
+
+  const subjectColor = activeSubject
+    ? SUBJECT_COLORS[activeSubject] || 'text-cyan-400 bg-cyan-950/40 border-cyan-500/20'
+    : '';
+
+  const lastMessageIsError = messages[messages.length - 1]?.isError === true;
+
+  return (
+    <div className="relative flex h-[calc(100vh-4rem)] bg-zinc-950 text-zinc-100 overflow-hidden">
+      {/* Primary Study Chat Workspace */}
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <header className="p-4 border-b border-white/10 flex items-center justify-between gap-3 shrink-0 bg-zinc-950/85 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl">
+                <Brain className="w-6 h-6 text-cyan-400" />
+              </div>
+              <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border border-zinc-950 animate-pulse" />
             </div>
-
-            <div className="border-t border-purple-500/10 pt-4 mt-6">
-              <p className="text-[10px] text-purple-400/80 font-bold flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-purple-400" /> Actionable tip tailored to your locked badges
+            <div>
+              <h1 className="text-lg font-black text-white">Tutor Chuks</h1>
+              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest flex items-center gap-1 mt-0.5">
+                <Sparkles className="w-3 h-3 text-cyan-400" />
+                Live Study Companion
               </p>
             </div>
-          </Card>
+          </div>
 
-          {/* Gamified Level Progress/Roadmap Card */}
-          <Card className="bg-zinc-900/40 border-white/5 rounded-3xl overflow-hidden shadow-xl">
-            <div className="p-6 bg-zinc-950/40 border-b border-white/5 flex items-center gap-3">
-              <div className="p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl">
-                <TrendingUp className="w-5 h-5 text-cyan-400" />
+          <div className="flex items-center gap-2">
+            {isLoadingHistory && (
+              <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-mono">
+                <History className="w-3.5 h-3.5 animate-spin" />
+                Syncing...
               </div>
-              <div>
-                <h4 className="font-black text-sm uppercase tracking-wide text-zinc-100">Scholar Level Roadmap</h4>
-                <p className="text-[10px] text-zinc-500">Reach higher leagues and unlock special privileges</p>
+            )}
+
+            {activeSubject && (
+              <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${subjectColor}`}>
+                {activeSubject}
+              </span>
+            )}
+
+            {messages.length > 1 && (
+              <button
+                onClick={() => setShowClearConfirm(true)}
+                className="p-2 rounded-xl hover:bg-white/10 text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer border-none bg-transparent"
+                title="Clear Study Room"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* Message Stream */}
+        <div
+          ref={scrollAreaRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 scroll-smooth"
+        >
+          {historyLoaded && messages.length > 2 && (
+            <div className="flex justify-center">
+              <div className="text-[10px] text-zinc-500 bg-zinc-900 border border-white/5 px-4 py-2 rounded-full font-mono flex items-center gap-1.5 shadow-sm">
+                <History className="w-3.5 h-3.5 text-cyan-400" />
+                Restored previous study conversation
               </div>
             </div>
+          )}
 
-            <CardContent className="p-6 space-y-4">
-              <div className="relative border-l border-zinc-800 pl-4 space-y-6 text-xs">
-                
-                {/* Level 4 */}
-                <div className="relative">
-                  <span className="absolute -left-[21px] top-1 h-3 w-3 rounded-full bg-cyan-400 border border-zinc-950" />
-                  <div className="space-y-0.5">
-                    <p className="font-bold text-zinc-200">💎 Diamond Scholar League</p>
-                    <p className="text-[10px] text-cyan-400 font-mono font-bold">Requirement: 3,000+ XP</p>
-                  </div>
+          {messages.map((msg) => (
+            <MessageBubble key={msg.id} msg={msg} />
+          ))}
+
+          <AnimatePresence>
+            {isLoading && (
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="flex justify-start"
+              >
+                <div className="flex items-center gap-2 text-cyan-400 text-xs font-mono font-bold bg-zinc-900/60 px-4 py-2.5 rounded-xl border border-white/5">
+                  <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                  Reviewing syllabus and textbook data...
                 </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-                {/* Level 3 */}
-                <div className="relative">
-                  <span className="absolute -left-[21px] top-1 h-3 w-3 rounded-full bg-yellow-400 border border-zinc-950" />
-                  <div className="space-y-0.5">
-                    <p className="font-bold text-zinc-200">🥇 Gold Scholar League</p>
-                    <p className="text-[10px] text-yellow-400 font-mono font-bold">Requirement: 1,500 - 2,999 XP</p>
-                  </div>
-                </div>
-
-                {/* Level 2 */}
-                <div className="relative">
-                  <span className="absolute -left-[21px] top-1 h-3 w-3 rounded-full bg-zinc-400 border border-zinc-950" />
-                  <div className="space-y-0.5">
-                    <p className="font-bold text-zinc-200">🥈 Silver Scholar League</p>
-                    <p className="text-[10px] text-zinc-400 font-mono font-bold">Requirement: 500 - 1,499 XP</p>
-                  </div>
-                </div>
-
-                {/* Level 1 */}
-                <div className="relative">
-                  <span className="absolute -left-[21px] top-1 h-3 w-3 rounded-full bg-orange-400 border border-zinc-950" />
-                  <div className="space-y-0.5">
-                    <p className="font-bold text-zinc-200">🥉 Bronze Scholar League</p>
-                    <p className="text-[10px] text-orange-400 font-mono font-bold">Requirement: 0 - 499 XP</p>
-                  </div>
-                </div>
-
-              </div>
-
-              <div className="bg-zinc-950/50 rounded-2xl border border-white/5 p-4 space-y-2 text-center">
-                <HelpCircle className="w-5 h-5 text-zinc-500 mx-auto" />
-                <p className="text-[10px] font-bold text-zinc-400">XP rewards apply directly to your national ranking standings. Climb leagues to stand out!</p>
-              </div>
-            </CardContent>
-          </Card>
-
+          <div ref={messagesEndRef} />
         </div>
 
-      </div>
+        {/* Scroll-to-bottom floating button */}
+        <AnimatePresence>
+          {showScrollBtn && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              onClick={() => scrollToBottom()}
+              className="absolute bottom-28 right-4 lg:right-80 bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-full p-2.5 shadow-lg z-10 cursor-pointer border-none"
+              title="Scroll to bottom"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </motion.button>
+          )}
+        </AnimatePresence>
 
+        {/* Retry on Error */}
+        {lastMessageIsError && (
+          <div className="px-4 pb-2 flex flex-col items-center gap-1">
+            <button
+              onClick={retryLastMessage}
+              disabled={isLoading}
+              className="flex items-center gap-2 text-xs text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-white/5 px-5 py-2.5 rounded-xl transition-all cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              Re-ask Question
+            </button>
+          </div>
+        )}
+
+        {/* Input Bar */}
+        <div className="p-4 bg-zinc-900/50 border-t border-white/5 shrink-0">
+          <OfflineBanner />
+
+          {!user && (
+            <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 mb-3">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              Please sign in to start chatting with Tutor Chuks.
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage(input);
+                }
+              }}
+              disabled={isLoading || !user}
+              maxLength={500}
+              className="flex-1 bg-zinc-900 border border-white/5 rounded-xl p-3 outline-none text-sm placeholder:text-zinc-600 focus:border-cyan-500/50 disabled:opacity-40 transition-colors text-white"
+              placeholder={user ? "Ask a question about any exam topic..." : "Sign in to chat with Tutor Chuks..."}
+            />
+
+            <Button
+              onClick={() => sendMessage(input)}
+              disabled={isLoading || !input.trim() || !user}
+              className="rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold shrink-0 disabled:opacity-40 border-none transition-all"
+            >
+              <Send className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between mt-2 px-1 text-[10px] text-zinc-700 font-mono">
+            <span>Enter to send · Shift+Enter for new line</span>
+            <span>{input.length}/500</span>
+          </div>
+        </div>
+      </main>
+
+      {/* High-Yield Topics Sidebar */}
+      <aside className="w-72 border-l border-white/10 bg-zinc-900/30 p-5 hidden lg:flex flex-col gap-5 overflow-y-auto shrink-0">
+        {user && (
+          <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-xs font-black text-white shrink-0">
+              {user.name?.charAt(0).toUpperCase() || 'S'}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-white truncate">{user.name}</p>
+              <p className="text-[10px] text-zinc-500 truncate">{user.email}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <h3 className="font-bold text-[10px] uppercase text-zinc-500 tracking-wider">
+            Revision Toolkit
+          </h3>
+          <div className="flex flex-col gap-2">
+            {QUICK_ACTIONS.map((action, i) => (
+              <Button
+                key={i}
+                variant="outline"
+                disabled={isLoading || !user}
+                onClick={() => sendMessage(action.query)}
+                className={`justify-start rounded-xl border-white/5 ${action.bg} text-zinc-300 hover:text-white disabled:opacity-40 text-xs py-5`}
+              >
+                <action.icon className={`w-4 h-4 mr-2 shrink-0 ${action.color}`} />
+                {action.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-white/5 pt-4 flex-1 space-y-3">
+          <h4 className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">
+            High-Yield Topics
+          </h4>
+
+          <div className="space-y-2">
+            {SYLLABUS_TOPICS.map((topic, i) => {
+              const color = SUBJECT_COLORS[topic.subject] || 'text-cyan-400';
+              const isActive = activeSubject === topic.subject;
+              return (
+                <button
+                  key={i}
+                  onClick={() => handleTopicClick(topic)}
+                  disabled={isLoading || !user}
+                  className={`w-full text-left p-3 rounded-xl text-xs transition-colors border flex items-start gap-2.5 group disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
+                    isActive
+                      ? 'bg-cyan-950/20 border-cyan-500/30 text-white'
+                      : 'bg-zinc-900/20 hover:bg-zinc-800 text-zinc-300 hover:text-white border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <BookOpen className={`w-3.5 h-3.5 mt-0.5 shrink-0 transition-transform ${
+                    isActive ? 'text-cyan-400' : 'text-zinc-600 group-hover:scale-105'
+                  }`} />
+                  <div>
+                    <span className="block font-bold">{topic.label}</span>
+                    <span className={`text-[10px] mt-0.5 block font-bold ${color.split(' ')[0]}`}>
+                      {topic.subject}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </aside>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {showClearConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+            onClick={() => setShowClearConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-zinc-900 border border-white/10 rounded-[24px] p-6 max-w-xs w-full space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-rose-500/10 rounded-xl">
+                  <Trash2 className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Reset Study Session?</h3>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    This will clear the current conversation history with Tutor Chuks.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => setShowClearConfirm(false)}
+                  variant="outline"
+                  className="flex-1 border-white/10 text-white text-xs rounded-xl"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={clearConversation}
+                  className="flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs rounded-xl border-none"
+                >
+                  Confirm
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
